@@ -1,0 +1,18 @@
+# Virtualenv
+.venv/
+
+# Downloaded market data (regenerate with aurum.data.dukascopy; ~40MB, 56 files)
+data/
+
+# Run logs
+logs/
+*.log
+
+# Generated outputs (regenerate with ./run_study.sh)
+reports/*.csv
+reports/*.png
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/

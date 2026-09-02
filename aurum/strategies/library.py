@@ -540,10 +540,17 @@ def daily_trend(
     above = d["close"] > ma
 
     # Require `confirm_bars` consecutive closes on the new side before acting,
-    # which cuts the whipsaw trades that cluster around a flat MA.
-    stable = above.rolling(confirm_bars).apply(lambda x: x.all() or not x.any(), raw=True)
-    cross_up = above & ~above.shift(1).fillna(False) & (stable == 1)
-    cross_dn = ~above & above.shift(1).fillna(False) & (stable == 1)
+    # which cuts the whipsaw trades that cluster around a flat MA. The signal
+    # fires on the bar completing that run, so the window itself is uniform and
+    # the bar *before* the window is what must sit on the old side.
+    n = max(int(confirm_bars), 1)
+    run_up = above.rolling(n).sum() == n
+    run_dn = (~above).rolling(n).sum() == n
+    was_below = ~above.shift(n).fillna(False)
+    was_above = above.shift(n).fillna(False)
+
+    cross_up = run_up & was_below
+    cross_dn = run_dn & was_above
 
     for side, mask in ((1, cross_up), (-1, cross_dn)):
         for _, bar in d[mask.fillna(False)].iterrows():

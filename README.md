@@ -18,37 +18,56 @@ survives.
 
 ## What the research found
 
-Every claim below is measured on ~4.7 years of XAUUSD tick data with real
-historical bid/ask spreads. Details and reproduction commands follow.
+Every claim below is measured on **1,588,196 one-minute bars of XAUUSD**
+(Jan 2021 – Aug 2026) built from Dukascopy tick data, carrying the **real
+historical bid/ask spread** minute by minute. Reproduce it all with
+`./run_study.sh`.
 
 ### 1. The headline: intraday expectancy is zero
 
 Walk-forward validation, ten rolling folds (12 months train / 3 months test),
 48 configurations searched per fold, **out-of-sample segments only**:
 
+Eighteen folds, 48 configurations searched per fold, fills resolved on the
+5-minute path:
+
 | Costs | n | E[R] per trade | bootstrap p | Trades needed for t=2 |
 |---|---|---|---|---|
-| `TIGHT` | 646 | +0.0367 | 0.217 | 4,218 |
-| **`REALISTIC`** | **645** | **+0.0003** | **0.494** | **47,667,782** |
+| `TIGHT` | 1,395 | +0.0593 | **0.035** | 1,680 |
+| **`REALISTIC`** | **1,326** | **+0.0133** | **0.337** | **32,101** |
 
-Total out-of-sample return at realistic costs: **+0.2 R across 2.7 years**. Not
-marginally negative, not marginally positive — zero, at a bootstrap p-value of
-0.49. Deflated Sharpe P(SR > 0) = 0.000.
+At realistic costs the intraday system is **statistically indistinguishable from
+zero** — and the deflated Sharpe, which corrects for the configurations searched,
+comes out at P(SR > 0) = 0.000.
 
-Parameter selection was *stable*: nine of ten folds independently chose the
-12:00–16:00 UTC window, 2.5 ATR stops and a 3R target. The mechanism is
-consistent. There is simply nothing left after costs.
+The `TIGHT` row is the interesting one. The signal is identical; only the spread
+changed, and that alone moves it from noise (p = 0.34) to marginally real
+(p = 0.035). **Execution cost, not signal quality, is the binding constraint.**
+
+Parameter selection was *stable*: sixteen of eighteen folds independently chose
+the 12:00–16:00 UTC window with 2.5 ATR stops. The mechanism is consistent —
+there is just very little left in it after costs.
+
+Every one of the nine hypotheses tested is negative out-of-sample on the
+held-out set, several significantly: opening-range breakout −0.202 (t = −2.93),
+sweep reversal −0.294 (t = −4.32), VWAP reversion −0.149 (t = −3.10).
 
 ### 2. Costs are the whole game
 
 Cost drag equals `round_trip_cost / stop_distance`, so **the stop size is a
 first-class risk parameter**, not a detail:
 
-| Timeframe | Stop floor | Avg stop | Cost as % of risk | Net E[R] |
-|---|---|---|---|---|
-| 5 min | $3 | $5.56 | **15.8%** | −0.159 |
-| 5 min | $12 | $12.48 | 6.4% | −0.015 |
-| 15 min | $12 | $13.02 | 6.2% | +0.021 |
+| Horizon | Avg stop | Cost as % of risk | Gross E[R] | Net E[R] | p |
+|---|---|---|---|---|---|
+| 15 min | $10.10 | 8.3% | +0.032 | **−0.077** | — (t = −3.70) |
+| 1 hour | $18.38 | 4.6% | +0.051 | −0.010 | 0.58 |
+| 4 hour | $40.59 | 2.1% | +0.212 | **+0.180** | **0.014** |
+| Daily | $107.59 | 0.8% | +0.274 | **+0.254** | **0.009** |
+
+Same mechanism at every horizon; only the timeframe changes. Cost falls
+tenfold, gross edge rises ninefold, and the two together take net expectancy
+from significantly negative to significantly positive. **Frequency is not a
+setting you tune — it is what you spend to get trades.**
 
 The predecessor's minimum stop of 0.05 × ATR on the reaction module permitted
 stops of roughly **12 cents** — smaller than the spread. Those trades book free

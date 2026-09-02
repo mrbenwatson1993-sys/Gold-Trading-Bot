@@ -1,16 +1,16 @@
-loaded 823,002 1m bars  2021-01-03 23:00:00+00:00 -> 2024-08-30 20:59:00+00:00
+loaded 1,588,196 1m bars  2021-01-03 23:00:00+00:00 -> 2026-08-31 23:59:00+00:00
 walk-forward over 48 configs per fold, tf=15min
-fill path: 5min (164,669 bars)
+fill path: 5min (317,743 bars)
 
 === 15min @ TIGHT costs (OUT OF SAMPLE ONLY) ===
-15min @ TIGHT costs          n=  646  E[R]=+0.0367  tot=   +23.7R  win=44.7%  PF=1.09  maxDD=25.3R  t=+0.78  tr/day=1.92
-  bootstrap p(E[R]>0) = 0.2167   deflated Sharpe P(SR>0) = 0.000   configs searched = 48
-  required n for t=2: 4218  (have 646)
+15min @ TIGHT costs          n= 1395  E[R]=+0.0593  tot=   +82.7R  win=43.2%  PF=1.13  maxDD=32.6R  t=+1.82  tr/day=1.94
+  bootstrap p(E[R]>0) = 0.0352   deflated Sharpe P(SR>0) = 0.000   configs searched = 48
+  required n for t=2: 1680  (have 1395)
 
 === 15min @ REALISTIC costs (OUT OF SAMPLE ONLY) ===
-15min @ REALISTIC costs      n=  645  E[R]=+0.0003  tot=    +0.2R  win=44.2%  PF=1.00  maxDD=22.5R  t=+0.01  tr/day=1.91
-  bootstrap p(E[R]>0) = 0.4936   deflated Sharpe P(SR>0) = 0.000   configs searched = 48
-  required n for t=2: 47667782  (have 645)
+15min @ REALISTIC costs      n= 1326  E[R]=+0.0133  tot=   +17.7R  win=42.1%  PF=1.03  maxDD=35.9R  t=+0.41  tr/day=1.89
+  bootstrap p(E[R]>0) = 0.3371   deflated Sharpe P(SR>0) = 0.000   configs searched = 48
+  required n for t=2: 32101  (have 1326)
 
   chosen config per fold (parameter stability):
 test_start   test_end  train_E_R  train_n  stop_atr  min_stop  target_r  trail_atr           mix  trade_start  trade_end
@@ -22,12 +22,27 @@ test_start   test_end  train_E_R  train_n  stop_atr  min_stop  target_r  trail_a
 2023-04-03 2023-07-03     0.0639      252       2.5      10.0       3.0        0.0 pullback+fade          720        960
 2023-07-03 2023-10-03     0.0604      255       2.5      10.0       3.0        0.0 pullback+fade          720        960
 2023-10-03 2024-01-03     0.0380      247       2.5      10.0       3.0        0.0 pullback+fade          720        960
-2024-01-03 2024-04-03     0.0346      255       2.5      10.0       3.0        0.0 pullback+fade          720        960
-2024-04-03 2024-07-03     0.1601      294       2.5       6.0       3.0        0.0 pullback+fade          720       1200
+2024-01-03 2024-04-03     0.0144      255       2.5      10.0       3.0        0.0 pullback+fade          720        960
+2024-04-03 2024-07-03     0.0873      245       2.5      10.0       3.0        0.0 pullback+fade          720        960
+2024-07-03 2024-10-03     0.0423      263       2.5       6.0       2.0        0.0 pullback+fade          720        960
+2024-10-03 2025-01-03     0.0642      284       2.5       6.0       2.0        2.5 pullback+fade          720        960
+2025-01-03 2025-04-03     0.1136      267       2.5       6.0       2.0        2.5 pullback+fade          720        960
+2025-04-03 2025-07-03     0.0362      221       2.5       6.0       2.0        0.0      pullback          720        960
+2025-07-03 2025-10-03     0.1036      474       2.5      10.0       3.0        0.0 pullback+fade          420       1200
+2025-10-03 2026-01-03     0.1509      237       2.5       6.0       2.0        0.0 pullback+fade          720        960
+2026-01-03 2026-04-03     0.1707      523       2.5      10.0       2.0        0.0 pullback+fade          420       1200
+2026-04-03 2026-07-03     0.1668      270       2.5      10.0       3.0        0.0 pullback+fade          720        960
 
   out-of-sample by year:
         n  expectancy_r    total_r  win_rate
 year                                        
+2025  335      0.067328  22.555041  0.414925
 2022  351      0.025709   9.023763  0.444444
-2023  255      0.034579   8.817672  0.458824
-2024   39     -0.451892 -17.623783  0.307692
+2023  255      0.014397   3.671202  0.454902
+2024  241     -0.004193  -1.010553  0.390041
+2026  144     -0.114916 -16.547939  0.368056
+
+=== 15min @ HARSH costs (OUT OF SAMPLE ONLY) ===
+15min @ HARSH costs          n= 1393  E[R]=-0.0290  tot=   -40.4R  win=40.4%  PF=0.94  maxDD=63.2R  t=-0.94  tr/day=1.93
+  bootstrap p(E[R]>0) = 0.8266   deflated Sharpe P(SR>0) = 0.000   configs searched = 48
+  required n for t=2: 6256  (have 1393)

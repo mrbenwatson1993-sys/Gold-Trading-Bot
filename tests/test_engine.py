@@ -99,3 +99,41 @@ def test_daily_loss_breaker_stops_further_trades():
     })
     kept = apply_caps(trades, max_concurrent=5, max_daily_loss_r=3.0)
     assert len(kept) == 2  # third is blocked: day is already -4R
+
+
+def test_daily_trend_confirmation_bars_actually_produce_signals():
+    """confirm_bars > 1 must still fire, on the bar completing the run.
+
+    The first implementation tested "the last N bars are all on one side" on the
+    crossing bar itself -- which is never true, because a crossing bar differs
+    from its predecessor by definition. It silently produced zero signals for
+    every confirm_bars > 1.
+    """
+    import numpy as np
+    import pandas as pd
+    from aurum.data.bars import add_features
+    from aurum.strategies import library as lib
+    from aurum.strategies.base import RiskSpec
+
+    # A clean V: 120 bars down, then 120 up. Any sane rule crosses twice.
+    n = 240
+    px = np.concatenate([np.linspace(2000, 1800, n // 2),
+                         np.linspace(1800, 2100, n // 2)])
+    idx = pd.date_range("2022-01-03", periods=n, freq="D", tz="UTC")
+    df = pd.DataFrame(
+        {
+            "ts": idx.tz_convert("UTC").tz_localize(None)
+                     .astype("datetime64[ms]").astype("int64"),
+            "open": px, "high": px + 4, "low": px - 4, "close": px,
+            "spread_med": np.full(n, 0.3), "ticks": np.full(n, 100),
+        },
+        index=idx,
+    )
+    bars = add_features(df)
+    spec = RiskSpec(stop_atr=3.0, target_r=99.0, min_stop_px=10.0,
+                    max_stop_px=200.0, trail_atr=2.0)
+
+    counts = {c: len(lib.daily_trend(bars, spec, ma_len=20, confirm_bars=c))
+              for c in (1, 2, 3)}
+    for c, k in counts.items():
+        assert k > 0, f"confirm_bars={c} produced no signals at all: {counts}"
