@@ -31,3 +31,8 @@ year
 2022  351      0.025709   9.023763  0.444444
 2023  255      0.034579   8.817672  0.458824
 2024   39     -0.451892 -17.623783  0.307692
+
+=== 15min @ HARSH costs (OUT OF SAMPLE ONLY) ===
+15min @ HARSH costs          n=  642  E[R]=-0.0375  tot=   -24.1R  win=43.1%  PF=0.91  maxDD=33.6R  t=-0.86  tr/day=1.91
+  bootstrap p(E[R]>0) = 0.8057   deflated Sharpe P(SR>0) = 0.000   configs searched = 48
+  required n for t=2: 3499  (have 642)

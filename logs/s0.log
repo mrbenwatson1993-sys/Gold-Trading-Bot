@@ -29,3 +29,7 @@
   2023-09: 480/510 hours
 [ok] XAUUSD_202309.parquet  bars=28,573  median_spread=0.300
   2024-01: 120/560 hours
+  2024-01: 240/560 hours
+  2024-01: 360/560 hours
+  2024-01: 480/560 hours
+[ok] XAUUSD_202401.parquet  bars=30,268  median_spread=0.330

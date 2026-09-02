@@ -21,25 +21,40 @@ survives.
 Every claim below is measured on ~4.7 years of XAUUSD tick data with real
 historical bid/ask spreads. Details and reproduction commands follow.
 
-### 1. Costs are the whole game
+### 1. The headline: intraday expectancy is zero
 
-On 15-minute gold with conventional stop sizes, the round-trip cost is
-**0.13–0.25 R per trade**. Several signals have a genuine positive gross edge
-and still lose money net:
+Walk-forward validation, ten rolling folds (12 months train / 3 months test),
+48 configurations searched per fold, **out-of-sample segments only**:
 
-| Signal | Gross E[R] | Net E[R] | Cost drag |
-|---|---|---|---|
-| Trend pullback | **+0.247** | −0.008 | 0.255 |
-| Stretch fade | +0.128 | −0.010 | 0.138 |
-| NY opening range | +0.079 | −0.058 | 0.137 |
+| Costs | n | E[R] per trade | bootstrap p | Trades needed for t=2 |
+|---|---|---|---|---|
+| `TIGHT` | 646 | +0.0367 | 0.217 | 4,218 |
+| **`REALISTIC`** | **645** | **+0.0003** | **0.494** | **47,667,782** |
+
+Total out-of-sample return at realistic costs: **+0.2 R across 2.7 years**. Not
+marginally negative, not marginally positive — zero, at a bootstrap p-value of
+0.49. Deflated Sharpe P(SR > 0) = 0.000.
+
+Parameter selection was *stable*: nine of ten folds independently chose the
+12:00–16:00 UTC window, 2.5 ATR stops and a 3R target. The mechanism is
+consistent. There is simply nothing left after costs.
+
+### 2. Costs are the whole game
 
 Cost drag equals `round_trip_cost / stop_distance`, so **the stop size is a
-first-class risk parameter**, not a detail. The predecessor's minimum stop of
-0.05 × ATR on the reaction module permitted stops of roughly **12 cents** —
-smaller than the spread. Those trades book free 2R winners in a backtest and
-are unconditionally unprofitable live.
+first-class risk parameter**, not a detail:
 
-### 2. Intraday gold is a random walk; the edge lives at the daily horizon
+| Timeframe | Stop floor | Avg stop | Cost as % of risk | Net E[R] |
+|---|---|---|---|---|
+| 5 min | $3 | $5.56 | **15.8%** | −0.159 |
+| 5 min | $12 | $12.48 | 6.4% | −0.015 |
+| 15 min | $12 | $13.02 | 6.2% | +0.021 |
+
+The predecessor's minimum stop of 0.05 × ATR on the reaction module permitted
+stops of roughly **12 cents** — smaller than the spread. Those trades book free
+2R winners in a backtest and are unconditionally unprofitable live.
+
+### 3. Intraday gold is a random walk; the edge lives at the daily horizon
 
 Lo-MacKinlay variance ratios across horizons:
 
@@ -70,14 +85,14 @@ Daily rules trade 10–20 times a *year*, so costs are negligible — a $0.80 ro
 trip against a multi-week $60 move is ~1% of the move, versus 10–20% of risk
 intraday. This is the same reason CTAs have traded gold this way for decades.
 
-### 3. Limit-at-retrace entries lose more than they save
+### 4. Limit-at-retrace entries lose more than they save
 
 They earn half the spread instead of paying it — worth roughly 0.03–0.05 R —
 but they only fill when price retraces, which selects for moves that are
 already failing. Market-on-close confirmation beat limit entries at every
 timeframe and stop size tested. The predecessor used limit entries everywhere.
 
-### 4. No hour of the day has a directional edge
+### 5. No hour of the day has a directional edge
 
 Across 24 simultaneous tests, **none** survives Bonferroni correction. Session
 filtering is still justified — but by *liquidity*, not direction:
@@ -98,10 +113,15 @@ session means paying close to the entire bar range in spread.
 
 Two ideas were good and survive in rebuilt form:
 
-**Trend pullback** (your "Candidate B" core) has the strongest gross edge of
-anything tested, at +0.247 R. Stripped of the 15-point score, the pattern zoo
-and the RSI band — none of which were derived from data — the mechanism itself
-holds up.
+**Trend pullback** (the "Candidate B" core) has the strongest gross edge of
+anything tested at every horizon, and it is the mechanism the daily strategy is
+built on. Stripped of the 15-point score, the pattern zoo and the RSI band —
+none of which were derived from data — the mechanism itself holds up.
+
+Its intraday decay is worth recording, because it is exactly what a short test
+window does to you: gross expectancy read **+0.247 R** on the first five months
+of data, **+0.062 R** at 2.7 years, and **−0.009 R** at 2.9 years. The original
+7.5-week validation window could only ever have measured the first of those.
 
 **Neutral reaction zones**, where a level's role is inferred from which side
 price is currently accepting rather than being permanently stamped "supply" or
@@ -203,4 +223,10 @@ done; wait
   selection; it does not capture liquidity you consume, weekend gap risk, or
   broker-side execution quality.
 * **Trade frequency and edge quality trade against each other.** See
-  `reports/` for the measured curve rather than a chosen point on it.
+  `reports/horizon_spectrum.csv` for the measured curve rather than a chosen
+  point on it.
+* **The daily result is directional, not proven.** It rests on 16–46 trades over
+  a window containing a strong gold bull market, with t-statistics of 0.5–1.8.
+  What raises it above noise is consistency across every parameter setting and
+  agreement with a large external literature on commodity trend-following — not
+  its own significance.
