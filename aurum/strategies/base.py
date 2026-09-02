@@ -36,6 +36,10 @@ class RiskSpec:
     # non-fill: when price never retraces you miss the move, and the trades you
     # *do* get are selected for having stalled. Measured, not assumed.
     entry_retrace: float = 0.0   # 0 = market; >0 = limit at this fraction of the bar range
+    # Exit management. Both default off so the baseline stays a clean
+    # fixed-stop / fixed-target trade that is easy to reason about.
+    breakeven_r: float = 0.0     # move stop to entry after this many R of profit
+    trail_atr: float = 0.0       # trail the stop by this many ATR (replaces the target)
 
 
 def make_signal(
@@ -75,6 +79,9 @@ def make_signal(
         stop_px=float(stop),
         target_px=float(target),
         entry_type=entry_type,
+        breakeven_r=spec.breakeven_r,
+        trail_atr=spec.trail_atr,
+        atr=float(atr),
         expiry_ms=int(spec.expiry_min * 60_000),
         max_hold_ms=int(spec.max_hold_h * 3600_000),
         tag=tag,
@@ -88,3 +95,45 @@ def session_mask(df: pd.DataFrame, start_utc_min: int, end_utc_min: int) -> pd.S
         return (df["mins_utc"] >= start_utc_min) & (df["mins_utc"] < end_utc_min)
     # wraps midnight
     return (df["mins_utc"] >= start_utc_min) | (df["mins_utc"] < end_utc_min)
+
+
+def filter_by_spread(
+    signals: list,
+    minutes,
+    max_spread_mult: float = 1.6,
+    lookback_days: int = 20,
+) -> list:
+    """Drop signals fired while the spread is abnormally wide.
+
+    A cost-driven filter rather than a predictive one, and one that only this
+    dataset makes possible: most historical feeds carry no spread at all.
+    Gold's spread blows out around news releases and at the session roll, and
+    those are exactly the moments when a market entry fills worst.
+
+    The threshold is relative to a rolling median for the *same hour of day*,
+    so it flags genuine dislocation rather than just re-discovering that the
+    Asian session is thin.
+    """
+    if not signals:
+        return signals
+    import numpy as np
+    import pandas as pd
+
+    sp = minutes["spread_med"]
+    hour = minutes.index.hour
+    baseline = sp.groupby(hour).transform(
+        lambda x: x.rolling(lookback_days * 60, min_periods=60).median()
+    )
+    ratio = (sp / baseline).reindex(minutes.index)
+
+    ts = minutes["ts"].to_numpy(np.int64)
+    rat = ratio.to_numpy(np.float64)
+    keep = []
+    for s in signals:
+        i = int(np.searchsorted(ts, s.ts, side="right"))
+        if i >= len(rat):
+            continue
+        r = rat[i]
+        if not np.isfinite(r) or r <= max_spread_mult:
+            keep.append(s)
+    return keep

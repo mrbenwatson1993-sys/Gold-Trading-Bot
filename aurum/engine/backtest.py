@@ -50,6 +50,14 @@ class Signal:
     max_hold_ms: int = 6 * 3600_000  # flatten an open trade after this
     tag: str = ""
     meta: dict = field(default_factory=dict)
+    # --- exit management (0 disables) ---------------------------------------
+    # Move the stop to breakeven once price has travelled this many R in our
+    # favour. Cuts the left tail; also converts some winners into scratches.
+    breakeven_r: float = 0.0
+    # Trail the stop by this many ATR once the trade is in profit, instead of
+    # holding a fixed stop. Lets winners run past the fixed target.
+    trail_atr: float = 0.0
+    atr: float = 0.0        # ATR at signal time, for the trail
 
 
 @dataclass
@@ -125,32 +133,51 @@ def resolve(
         # ---------------- open position phase ----------------
         stop_deadline = ts[fill_idx] + sig.max_hold_ms
         exit_idx, exit_px, reason = -1, np.nan, "timeout"
+        stop_now = sig.stop_px
+        be_done = False
+        trail_dist = sig.trail_atr * sig.atr if (sig.trail_atr > 0 and sig.atr > 0) else 0.0
+        use_target = sig.target_px if trail_dist <= 0 else np.nan
+
         j = fill_idx
         while j < n and ts[j] <= stop_deadline:
             half = costs.effective_spread(sp[j]) / 2.0
             if long:
-                hit_stop = lo[j] - half <= sig.stop_px
-                hit_tgt = hi[j] - half >= sig.target_px
+                bid_hi, bid_lo = hi[j] - half, lo[j] - half
+                hit_stop = bid_lo <= stop_now
+                hit_tgt = (not np.isnan(use_target)) and bid_hi >= use_target
             else:
-                hit_stop = hi[j] + half >= sig.stop_px
-                hit_tgt = lo[j] + half <= sig.target_px
+                ask_hi, ask_lo = hi[j] + half, lo[j] + half
+                hit_stop = ask_hi >= stop_now
+                hit_tgt = (not np.isnan(use_target)) and ask_lo <= use_target
 
             if hit_stop and hit_tgt:
                 ambiguous += 1                     # unresolvable: assume the loss
                 exit_idx, reason = j, "stop_ambiguous"
-                exit_px = sig.stop_px - costs.stop_slippage * sig.side
+                exit_px = stop_now - costs.stop_slippage * sig.side
                 break
             if hit_stop:
-                exit_idx, reason = j, "stop"
-                exit_px = sig.stop_px - costs.stop_slippage * sig.side
+                exit_idx = j
+                reason = "breakeven" if (be_done and abs(stop_now - fill_px) < 1e-9) else "stop"
+                exit_px = stop_now - costs.stop_slippage * sig.side
                 break
             if hit_tgt:
                 exit_idx, reason = j, "target"
-                exit_px = sig.target_px
+                exit_px = use_target
                 break
+
+            # --- update protective stop using only information available now --
+            excursion = (bid_hi - fill_px) if long else (fill_px - ask_lo)
+            if sig.breakeven_r > 0 and not be_done and excursion >= sig.breakeven_r * risk_px:
+                cand = fill_px
+                stop_now = max(stop_now, cand) if long else min(stop_now, cand)
+                be_done = True
+            if trail_dist > 0 and excursion > 0:
+                cand = (bid_hi - trail_dist) if long else (ask_lo + trail_dist)
+                stop_now = max(stop_now, cand) if long else min(stop_now, cand)
             j += 1
 
         if exit_idx < 0:
+            # Held to the time limit (or ran out of data): flatten at market.
             exit_idx = min(j, n - 1)
             half = costs.effective_spread(sp[exit_idx]) / 2.0
             exit_px = cl[exit_idx] - (half + costs.entry_slippage) * sig.side

@@ -50,8 +50,10 @@ def _spec(p: dict) -> RiskSpec:
         min_stop_px=p["min_stop"],
         max_stop_px=40.0,
         entry_retrace=p.get("entry_retrace", 0.0),
+        breakeven_r=p.get("breakeven_r", 0.0),
+        trail_atr=p.get("trail_atr", 0.0),
         expiry_min=45,
-        max_hold_h=p.get("hold_h", 8.0),
+        max_hold_h=p.get("hold_h", 12.0),
     )
 
 
@@ -64,17 +66,16 @@ def build_signals(bars: pd.DataFrame, p: dict) -> list:
     spec = _spec(p)
     sigs = []
     ts, te = p["trade_start"], p["trade_end"]
-    if p.get("use_pullback", True):
+    mix = p.get("mix", "pullback")
+    if "pullback" in mix:
         sigs += lib.trend_pullback(bars, spec, trade_start=ts, trade_end=te)
-    if p.get("use_sweep", False):
-        sigs += lib.sweep_reversal(bars, spec, lookback=p.get("sweep_lb", 24),
-                                   trade_start=ts, trade_end=te)
-    if p.get("use_fade", False):
+    if "fade" in mix:
         sigs += lib.stretch_fade(bars, spec, stretch_atr=p.get("stretch", 2.0),
                                  trade_start=ts, trade_end=te)
-    if p.get("use_vwap", False):
-        sigs += lib.vwap_reversion(bars, spec, stretch=p.get("stretch", 2.0),
-                                   trade_start=ts, trade_end=te)
+    if "expansion" in mix:
+        sigs += lib.volatility_expansion(bars, spec, trade_start=ts, trade_end=te)
+    if "sweep" in mix:
+        sigs += lib.sweep_reversal(bars, spec, trade_start=ts, trade_end=te)
     return sigs
 
 
@@ -167,17 +168,18 @@ def main(data_dir: Path, out_dir: Path, tf: str = "15min") -> None:
     minutes = load_minutes(data_dir)
     print(f"loaded {len(minutes):,} 1m bars  {minutes.index.min()} -> {minutes.index.max()}")
 
-    param_grid = list(
-        grid(
-            stop_atr=[1.5, 2.0, 2.5, 3.0],
-            target_r=[1.5, 2.0, 2.5],
-            min_stop=[4.0, 6.0, 8.0],
-            trade_start=[7 * 60, 12 * 60],
-            trade_end=[20 * 60],
-            use_pullback=[True],
-            use_sweep=[False, True],
-        )
-    )
+    # 48 configurations. Kept small on purpose: the more the walk-forward
+    # searches, the more likely its per-fold winner is the luckiest rather
+    # than the best, which is exactly what deflated Sharpe penalises.
+    param_grid = [
+        dict(stop_atr=2.5, min_stop=ms, target_r=tr, trail_atr=ta,
+             mix=mix, trade_start=w[0], trade_end=w[1])
+        for ms in (6.0, 10.0)
+        for tr in (2.0, 3.0)
+        for ta in (0.0, 2.5)
+        for mix in ("pullback", "pullback+fade")
+        for w in ((7 * 60, 20 * 60), (12 * 60, 20 * 60), (12 * 60, 16 * 60))
+    ]
     print(f"walk-forward over {len(param_grid)} configs per fold, tf={tf}")
 
     results = {}
