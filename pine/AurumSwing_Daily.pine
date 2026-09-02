@@ -1,0 +1,140 @@
+//@version=6
+// =============================================================================
+// Aurum Swing - XAUUSD daily / 4-hour trend
+//
+// This is the strategy the research actually supports.  It is NOT an intraday
+// bot, and that is the point.
+//
+// The study behind it ran one trend mechanism at four horizons on ~3-5 years of
+// XAUUSD tick data with real historical bid/ask spreads.  Only the timeframe
+// changed:
+//
+//   horizon | trades/yr | avg stop | cost as % of risk | gross E[R] | net E[R]
+//   --------+-----------+----------+-------------------+------------+---------
+//    15 min |    333    |  $ 7.34  |      10.4%        |   +0.020   |  -0.098
+//     1 hr  |     92    |  $12.85  |       6.0%        |   +0.037   |  -0.026
+//     4 hr  |     24    |  $29.01  |       2.6%        |   +0.131   |  +0.098
+//     daily |     16    |  $76.68  |       1.0%        |   +0.267   |  +0.245
+//
+// Two things move together as the horizon lengthens.  Cost drag falls, because
+// drag = round_trip_cost / stop_distance and stops scale with ATR.  And the
+// gross edge RISES, because intraday gold is statistically a random walk
+// (variance ratios 0.99-1.00, |z| < 1.4 at 15m and above) while the daily
+// horizon carries real trend.
+//
+// Frequency is therefore not a free parameter you tune.  It is the thing you
+// are trading away when you ask for more trades.
+//
+// WARNING ON SAMPLE SIZE: the daily result rests on a few dozen trades over a
+// period that includes a strong gold bull market.  It is directionally sound
+// and consistent across parameter settings, but it is NOT statistically
+// conclusive.  Size accordingly.
+// =============================================================================
+
+strategy(
+     "Aurum Swing - XAUUSD Daily",
+     overlay              = true,
+     pyramiding           = 0,
+     initial_capital      = 10000,
+     currency             = currency.USD,
+     default_qty_type     = strategy.percent_of_equity,
+     default_qty_value    = 100,
+     process_orders_on_close = false,
+     calc_on_every_tick   = false,
+     commission_type      = strategy.commission.cash_per_contract,
+     commission_value     = 0.02,
+     slippage             = 5,
+     max_labels_count     = 100)
+
+string G_SIG  = "Signal"
+string G_RISK = "Risk"
+
+maLen        = input.int(50, "Trend MA length", 5, 300, group = G_SIG,
+     tooltip = "Results were positive across 20/50/100 rather than at one lucky " +
+               "setting. That consistency matters more than the exact number.")
+confirmBars  = input.int(1, "Confirmation closes", 1, 5, group = G_SIG,
+     tooltip = "Consecutive closes required on the new side of the MA before acting. " +
+               "Cuts whipsaws when the MA is flat.")
+atrLen       = input.int(14, "ATR length", 2, 100, group = G_SIG)
+
+riskPct      = input.float(1.0, "Risk per trade (% of equity)", 0.1, 5.0, 0.1, group = G_RISK)
+initStopAtr  = input.float(3.0, "Initial stop (ATR)", 0.5, 10.0, 0.5, group = G_RISK)
+trailAtr     = input.float(2.0, "Trailing stop (ATR)", 0.5, 10.0, 0.5, group = G_RISK,
+     tooltip = "There is deliberately NO fixed profit target. A target defeats the " +
+               "point of trend following: the whole edge is in the few trades that run.")
+minStopUsd   = input.float(10.0, "Minimum stop ($)", 1.0, 100.0, 1.0, group = G_RISK)
+maxStopUsd   = input.float(200.0, "Maximum stop ($)", 10.0, 500.0, 5.0, group = G_RISK)
+
+// =============================================================================
+// ENGINE
+// =============================================================================
+ma  = ta.sma(close, maLen)
+atr = ta.atr(atrLen)
+
+plot(ma, "Trend MA", color = close > ma ? color.new(color.teal, 0)
+                                        : color.new(color.red, 0), linewidth = 2)
+
+bool above = close > ma
+bool stableUp = true
+bool stableDn = true
+for i = 0 to confirmBars - 1
+    stableUp := stableUp and close[i] > ma[i]
+    stableDn := stableDn and close[i] < ma[i]
+
+bool crossUp = stableUp and close[confirmBars] <= ma[confirmBars]
+bool crossDn = stableDn and close[confirmBars] >= ma[confirmBars]
+
+float stopDist = math.min(math.max(atr * initStopAtr, minStopUsd), maxStopUsd)
+float riskCash = strategy.equity * riskPct / 100.0
+float qty = stopDist > 0 ? riskCash / stopDist : na
+
+// ---- trailing stop state ----------------------------------------------------
+var float trailStop = na
+bool flat = strategy.position_size == 0
+if flat
+    trailStop := na
+
+if crossUp and not na(qty) and qty > 0
+    strategy.entry("Long", strategy.long, qty = qty)
+    trailStop := close - stopDist
+
+if crossDn and not na(qty) and qty > 0
+    strategy.entry("Short", strategy.short, qty = qty)
+    trailStop := close + stopDist
+
+// Ratchet the trail; it may only ever move in our favour.
+if strategy.position_size > 0
+    trailStop := na(trailStop) ? close - atr * trailAtr
+                               : math.max(trailStop, close - atr * trailAtr)
+    strategy.exit("Long-x", from_entry = "Long", stop = trailStop)
+
+if strategy.position_size < 0
+    trailStop := na(trailStop) ? close + atr * trailAtr
+                               : math.min(trailStop, close + atr * trailAtr)
+    strategy.exit("Short-x", from_entry = "Short", stop = trailStop)
+
+plot(strategy.position_size != 0 ? trailStop : na, "Trailing stop",
+     color = color.new(color.orange, 0), style = plot.style_linebr, linewidth = 2)
+
+// =============================================================================
+// DIAGNOSTICS
+// =============================================================================
+var table t = table.new(position.top_right, 2, 5, border_width = 1)
+if barstate.islast
+    table.cell(t, 0, 0, "Aurum Swing", text_color = color.white,
+         bgcolor = color.new(color.teal, 30))
+    table.cell(t, 1, 0, "", bgcolor = color.new(color.teal, 30))
+    table.cell(t, 0, 1, "Stop distance ($)")
+    table.cell(t, 1, 1, str.tostring(stopDist, "#.##"))
+    table.cell(t, 0, 2, "Cost as % of risk")
+    table.cell(t, 1, 2, str.tostring(0.45 / stopDist * 100, "#.##") + "%")
+    table.cell(t, 0, 3, "Position")
+    table.cell(t, 1, 3, strategy.position_size > 0 ? "LONG"
+                      : strategy.position_size < 0 ? "SHORT" : "flat")
+    table.cell(t, 0, 4, "Closed trades")
+    table.cell(t, 1, 4, str.tostring(strategy.closedtrades))
+
+plotshape(crossUp, "Long entry", shape.triangleup, location.belowbar,
+     color.new(color.green, 0), size = size.small)
+plotshape(crossDn, "Short entry", shape.triangledown, location.abovebar,
+     color.new(color.red, 0), size = size.small)

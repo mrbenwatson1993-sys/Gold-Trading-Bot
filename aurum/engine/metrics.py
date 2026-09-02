@@ -49,6 +49,13 @@ def summarise(trades: pd.DataFrame, label: str = "") -> dict:
     tpy = n / max(span_days, 1) * 365.0
     sharpe = (mean_r / sd_r * np.sqrt(tpy)) if sd_r and sd_r > 0 else np.nan
 
+    # Two different "per day" numbers, both useful and easy to confuse:
+    #   per ACTIVE day  = n / days on which we traded at all
+    #   per AVAILABLE day = n / weekday sessions in the span   <- the one that
+    # answers "how many trades will I see in a typical day", and the one a
+    # frequency target should be measured against.
+    available_days = max(span_days * 5.0 / 7.0, 1.0)
+
     return {
         "label": label,
         "n": n,
@@ -60,7 +67,9 @@ def summarise(trades: pd.DataFrame, label: str = "") -> dict:
         "max_dd_r": max_dd,
         "return_over_dd": r.sum() / max_dd if max_dd > 0 else np.inf,
         "sharpe": sharpe,
-        "trades_per_trading_day": n / max(trading_days, 1),
+        "trades_per_trading_day": n / max(trading_days, 1),   # per ACTIVE day
+        "trades_per_available_day": n / available_days,
+        "trades_per_year": n / max(span_days, 1) * 365.0,
         "trading_days": trading_days,
         "span_days": span_days,
         "avg_hold_min": trades["hold_min"].mean() if "hold_min" in trades else np.nan,
