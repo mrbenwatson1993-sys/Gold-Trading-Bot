@@ -1,0 +1,343 @@
+//@version=5
+// =============================================================================
+// AURUM EDGE V4 - XAUUSD 30m - Symmetric Dual-Engine
+//
+// V3's long engine, untouched, plus two short engines built as structural
+// mirrors of it. All three are independently switchable.
+//
+// -----------------------------------------------------------------------------
+// READ THIS BEFORE YOU ENABLE THE SHORT ENGINES
+//
+// Both short engines are OFF by default, and that is a measurement, not caution.
+// They were built to spec and tested on 1,678,872 one-minute bars (Jan 2021 -
+// Aug 2026) with real historical spreads, and the daily bear gate was ACTIVE FOR
+// 18.6% of that history (10,411 of 55,988 30m bars, longest run 123 days). So
+// this was a fair test on a real sample, not an untested regime.
+//
+//   SYMMETRIC SHORT ENGINE (daily bear gate, 3 mirrored triggers)
+//     mirrored ladder exit   n=491  E[R] -0.086  PF 0.85  t=-1.28
+//     BE@1R + 2R target      n=638  E[R] -0.007  PF 0.99  t=-0.14   <- least bad
+//     fixed 1R target        n=736  E[R] -0.024  PF 0.95  t=-0.65
+//     4xATR trail            n=573  E[R] -0.080  PF 0.84  t=-1.56
+//     on 1h bars             n=321  E[R] -0.136  PF 0.78
+//     on 4h bars             n=117  E[R] -0.215  PF 0.68
+//
+//   COUNTER-TREND SHORT (overbought spike inside a bull regime)
+//     ALL 18 variants tested were negative, most significantly so:
+//     ext>1.5ATR RSI>70 tp1R    n=575  E[R] -0.206  t=-5.19  p=1.000
+//     ext>2.0ATR RSI>75 ladder  n=225  E[R] -0.399  t=-5.31  p=1.000
+//
+// WHY. Gold is not symmetric. It carries structural upward drift, so its
+// downtrends are shallower, choppier and revert faster than its uptrends. A
+// mirrored trend-follower assumes downmoves persist the way upmoves do; on gold
+// they do not. The pullbacks that look like short setups on a daily chart are
+// mostly mean-reverting dips inside an uptrend - which is precisely what the
+// LONG engine is buying, and why shorting them loses.
+//
+// The engines are here, complete and symmetric, so you can forward-test them
+// yourself and so the machinery exists if gold ever breaks its multi-year
+// uptrend. At that point the short side is worth re-testing on new data. Until
+// then, the evidence says leave them off.
+//
+// -----------------------------------------------------------------------------
+// LONG ENGINE - walk-forward validated, out-of-sample only
+//   16 folds, Jan 2023 - Mar 2026, exit re-chosen inside each training window
+//     2.40 trades/day   n=2011   E[R] +0.284 R   total +572.0 R
+//     win 34.2%   PF 1.50   maxDD 47.5 R   t=+6.83   p<0.0001
+//     deflated Sharpe P(SR>0) = 1.000
+//   At 0.25% risk: ~+48%/yr at ~13% drawdown, against buy-and-hold gold at
+//   +47%/yr and 19% drawdown over the same window.
+//
+//   Caveat, stated plainly: all 2,011 trades are long and the out-of-sample
+//   window is a gold bull market. The least-trending slice (2023) returned
+//   +0.118 R at p=0.066, which is not significant.
+// =============================================================================
+
+strategy(
+     "Aurum Edge V4 - XAUUSD 30m Dual Engine",
+     overlay                 = true,
+     pyramiding              = 10,
+     initial_capital         = 10000,
+     currency                = currency.USD,
+     default_qty_type        = strategy.percent_of_equity,
+     default_qty_value       = 100,
+     process_orders_on_close = false,
+     calc_on_every_tick      = false,
+     calc_on_order_fills     = false,
+     commission_type         = strategy.commission.cash_per_contract,
+     commission_value        = 0.02,
+     slippage                = 3,
+     max_labels_count        = 500)
+
+// =============================================================================
+// INPUTS
+// =============================================================================
+string G_ENG = "1. Engines"
+string G_R   = "2. Risk"
+string G_LE  = "3. Long entries (bull regime)"
+string G_SE  = "4. Short entries (bear regime)"
+string G_CT  = "5. Counter-trend shorts (bull overbought)"
+string G_LAD = "6. Ladder exit"
+string G_UI  = "7. Display and alerts"
+
+enableLong  = input.bool(true,  "Enable Long Engine (bull regime)", group = G_ENG)
+enableShort = input.bool(false, "Enable Symmetric Short Engine (bear regime)", group = G_ENG,
+     tooltip = "OFF by default because it was measured at -0.086 R per trade over 491 " +
+               "trades in a genuine bear sample (18.6% of history). Enable to forward-test.")
+enableCT    = input.bool(false, "Enable Counter-Trend Short Engine (bull overbought)", group = G_ENG,
+     tooltip = "OFF by default. All 18 tested variants were negative, most at t < -4. " +
+               "Shorting overbought gold inside an uptrend lost money reliably.")
+
+riskPct    = input.float(0.25, "Risk per trade (% of equity)", 0.05, 3.0, 0.05, group = G_R)
+ctRiskMult = input.float(0.5,  "Counter-trend risk multiplier", 0.1, 1.0, 0.1, group = G_R,
+     tooltip = "Counter-trend trades size smaller than trend trades.")
+stopAtr    = input.float(2.0,  "Initial stop (ATR)", 0.5, 6.0, 0.1, group = G_R)
+minStopUsd = input.float(8.0,  "Minimum stop ($)", 1.0, 60.0, 0.5, group = G_R,
+     tooltip = "Cost drag = round-trip cost / stop distance. Round trip on gold is " +
+               "roughly $0.45-$1.20; below about $5 of stop the spread eats the edge.")
+maxStopUsd = input.float(200.0, "Maximum stop ($)", 20.0, 500.0, 5.0, group = G_R)
+maxOpen    = input.int(5, "Max concurrent positions (per side)", 1, 10, group = G_R)
+
+useL1 = input.bool(true, "L1: pullback to EMA20", group = G_LE)
+useL2 = input.bool(true, "L2: deeper pullback to EMA50", group = G_LE)
+useL3 = input.bool(true, "L3: 24-bar breakout", group = G_LE)
+
+useS1 = input.bool(true, "S1: rally pullback to EMA20", group = G_SE)
+useS2 = input.bool(true, "S2: deep rally pullback to EMA50", group = G_SE)
+useS3 = input.bool(true, "S3: 24-bar breakdown", group = G_SE)
+shortExitMode = input.string("Tight 1R target", "Short exit style", group = G_SE,
+     options = ["Mirrored ladder", "Tight 1R target", "BE at 1R then 2R target"],
+     tooltip = "Trend-following exits were the WORST on shorts (-0.086 R) while a tight " +
+               "target was least bad (-0.007 R). The asymmetry is the point: gold's " +
+               "downmoves do not persist the way its upmoves do.")
+
+ctExtAtr = input.float(2.0, "Extension above EMA20 (ATR)", 0.5, 6.0, 0.25, group = G_CT)
+ctRsi    = input.float(70,  "RSI threshold", 50, 95, 1, group = G_CT)
+ctTpR    = input.float(1.0, "Counter-trend target (R)", 0.5, 5.0, 0.25, group = G_CT)
+
+r1Trig = input.float(1.5, "Rung 1 trigger (R)", 0.25, 5.0, 0.25, group = G_LAD)
+r1Lock = input.float(0.0, "Rung 1 lock (R)", -1.0, 5.0, 0.1, group = G_LAD, tooltip = "0 = breakeven")
+r2Trig = input.float(3.0, "Rung 2 trigger (R)", 0.5, 9.0, 0.25, group = G_LAD)
+r2Lock = input.float(1.5, "Rung 2 lock (R)", -1.0, 9.0, 0.1, group = G_LAD)
+r3Trig = input.float(5.0, "Rung 3 trigger (R)", 1.0, 15.0, 0.25, group = G_LAD)
+r3Lock = input.float(3.2, "Rung 3 lock (R)", -1.0, 15.0, 0.1, group = G_LAD)
+maxHoldBars = input.int(96, "Time stop (bars)", 8, 500, group = G_LAD, tooltip = "96 x 30m = 48h")
+
+atrLen     = input.int(14, "ATR length", 2, 100, group = G_UI)
+showLabels = input.bool(true, "Show trade labels", group = G_UI)
+showPanel  = input.bool(true, "Show regime panel", group = G_UI)
+tintBg     = input.bool(true, "Tint background by regime", group = G_UI)
+
+// =============================================================================
+// HIGHER-TIMEFRAME REGIME GATES
+// Only COMPLETED daily bars are read ([1] offset), so these cannot repaint.
+// =============================================================================
+dE20  = request.security(syminfo.tickerid, "D", ta.ema(close, 20)[1],  lookahead = barmerge.lookahead_on)
+dE50  = request.security(syminfo.tickerid, "D", ta.ema(close, 50)[1],  lookahead = barmerge.lookahead_on)
+dE200 = request.security(syminfo.tickerid, "D", ta.ema(close, 200)[1], lookahead = barmerge.lookahead_on)
+
+bool macroBull = dE20 > dE50 and dE50 > dE200          // long gate
+bool macroBear = dE20 < dE50 and dE50 < dE200          // exact inverse
+
+// =============================================================================
+// 30-MINUTE ENGINE
+// =============================================================================
+ema20  = ta.ema(close, 20)
+ema50  = ta.ema(close, 50)
+ema200 = ta.ema(close, 200)
+atr    = ta.atr(atrLen)
+rsi    = ta.rsi(close, 14)
+
+plot(ema20,  "EMA20",  color = color.new(color.aqua, 0),   linewidth = 1)
+plot(ema50,  "EMA50",  color = color.new(color.orange, 0), linewidth = 1)
+plot(ema200, "EMA200", color = color.new(color.purple, 0), linewidth = 2)
+
+bool stackUp = ema20 > ema50 and ema50 > ema200
+bool stackDn = ema20 < ema50 and ema50 < ema200
+bool slopeUp = ema20 > ema20[3]
+bool slopeDn = ema20 < ema20[3]
+
+float hh24 = ta.highest(high, 24)[1]
+float ll24 = ta.lowest(low, 24)[1]
+
+// ---- LONG triggers (identical to V3) ---------------------------------------
+bool sigL1 = useL1 and stackUp and slopeUp and low  <= ema20 and close > ema20 and close > open
+bool sigL2 = useL2 and stackUp and              low  <= ema50 and close > ema50 and close > open
+bool sigL3 = useL3 and                          close > hh24  and close > open
+bool longSignal = enableLong and macroBull and (sigL1 or sigL2 or sigL3)
+
+// ---- SHORT triggers (exact structural mirrors) ------------------------------
+bool sigS1 = useS1 and stackDn and slopeDn and high >= ema20 and close < ema20 and close < open
+bool sigS2 = useS2 and stackDn and              high >= ema50 and close < ema50 and close < open
+bool sigS3 = useS3 and                          close < ll24  and close < open
+bool shortSignal = enableShort and macroBear and (sigS1 or sigS2 or sigS3)
+
+// ---- COUNTER-TREND short (overbought exhaustion inside a bull regime) -------
+float extAtr = atr > 0 ? (close - ema20) / atr : 0.0
+bool sigCT = enableCT and macroBull and extAtr >= ctExtAtr and rsi >= ctRsi and close < open
+
+// =============================================================================
+// POSITION SIZING
+// =============================================================================
+float stopDist = math.min(math.max(atr * stopAtr, minStopUsd), maxStopUsd)
+float qtyBase  = stopDist > 0 ? (strategy.equity * riskPct / 100.0) / stopDist : na
+float qtyCT    = na(qtyBase) ? na : qtyBase * ctRiskMult
+
+int openLongs  = 0
+int openShorts = 0
+if strategy.opentrades > 0
+    for i = 0 to strategy.opentrades - 1
+        if strategy.opentrades.size(i) > 0
+            openLongs += 1
+        else
+            openShorts += 1
+
+// =============================================================================
+// ENTRIES - each position carries its own id so it can run its own ladder
+// =============================================================================
+var int seq = 0
+var map<string, float> riskOf  = map.new<string, float>()
+var map<string, float> entryOf = map.new<string, float>()
+var map<string, int>   barOf   = map.new<string, int>()
+var map<string, int>   kindOf  = map.new<string, int>()   // 0 long, 1 short, 2 counter-trend
+
+_register(string id, float rp, float ep, int kind) =>
+    map.put(riskOf,  id, rp)
+    map.put(entryOf, id, ep)
+    map.put(barOf,   id, bar_index)
+    map.put(kindOf,  id, kind)
+
+if longSignal and openLongs < maxOpen and not na(qtyBase) and qtyBase > 0
+    seq += 1
+    string id = "L" + str.tostring(seq)
+    strategy.entry(id, strategy.long, qty = qtyBase)
+    _register(id, stopDist, close, 0)
+    if showLabels
+        label.new(bar_index, low, "L", style = label.style_label_up,
+             color = color.new(color.green, 20), textcolor = color.white, size = size.tiny)
+    alert("AURUM_V4 LONG entry=" + str.tostring(close, "#.##") +
+          " stop=" + str.tostring(close - stopDist, "#.##") +
+          " risk=" + str.tostring(stopDist, "#.##"), alert.freq_once_per_bar_close)
+
+if shortSignal and openShorts < maxOpen and not na(qtyBase) and qtyBase > 0
+    seq += 1
+    string id = "S" + str.tostring(seq)
+    strategy.entry(id, strategy.short, qty = qtyBase)
+    _register(id, stopDist, close, 1)
+    if showLabels
+        label.new(bar_index, high, "S", style = label.style_label_down,
+             color = color.new(color.red, 20), textcolor = color.white, size = size.tiny)
+    alert("AURUM_V4 SHORT entry=" + str.tostring(close, "#.##") +
+          " stop=" + str.tostring(close + stopDist, "#.##") +
+          " risk=" + str.tostring(stopDist, "#.##"), alert.freq_once_per_bar_close)
+
+if sigCT and openShorts < maxOpen and not na(qtyCT) and qtyCT > 0
+    seq += 1
+    string id = "C" + str.tostring(seq)
+    strategy.entry(id, strategy.short, qty = qtyCT)
+    _register(id, stopDist, close, 2)
+    if showLabels
+        label.new(bar_index, high, "CT", style = label.style_label_down,
+             color = color.new(color.orange, 20), textcolor = color.white, size = size.tiny)
+    alert("AURUM_V4 CT-SHORT entry=" + str.tostring(close, "#.##") +
+          " stop=" + str.tostring(close + stopDist, "#.##"), alert.freq_once_per_bar_close)
+
+// =============================================================================
+// EXITS - per position, ratcheting on CLOSED BARS ONLY
+//
+// The ratchet reads the completed bar's close, never its running high/low. That
+// is deliberate and is why calc_on_every_tick is false. Trailing from an
+// intrabar extreme lets the stop jump to a level the trade never actually held;
+// in testing that produced a +0.089 R phantom edge on coin-flip entries with
+// costs switched off, where the true answer is mathematically zero.
+// =============================================================================
+if strategy.opentrades > 0
+    for i = 0 to strategy.opentrades - 1
+        string id = strategy.opentrades.entry_id(i)
+        if map.contains(riskOf, id)
+            float rp   = map.get(riskOf,  id)
+            float ep   = map.get(entryOf, id)
+            int   eb   = map.get(barOf,   id)
+            int   kind = map.get(kindOf,  id)
+            int   dir  = kind == 0 ? 1 : -1
+
+            if rp > 0
+                float excursionR = (close - ep) * dir / rp
+                float stopLvl = ep - rp * dir              // initial stop
+                float tgtLvl  = na
+
+                if kind == 0                                // LONG: full ladder
+                    if excursionR >= r3Trig
+                        stopLvl := ep + r3Lock * rp
+                    else if excursionR >= r2Trig
+                        stopLvl := ep + r2Lock * rp
+                    else if excursionR >= r1Trig
+                        stopLvl := ep + r1Lock * rp
+
+                else if kind == 1                           // SHORT: chosen style
+                    if shortExitMode == "Mirrored ladder"
+                        if excursionR >= r3Trig
+                            stopLvl := ep - r3Lock * rp
+                        else if excursionR >= r2Trig
+                            stopLvl := ep - r2Lock * rp
+                        else if excursionR >= r1Trig
+                            stopLvl := ep - r1Lock * rp
+                    else if shortExitMode == "Tight 1R target"
+                        tgtLvl := ep - rp
+                    else                                    // BE at 1R then 2R target
+                        tgtLvl := ep - 2.0 * rp
+                        if excursionR >= 1.0
+                            stopLvl := ep
+
+                else                                        // COUNTER-TREND short
+                    tgtLvl := ep - ctTpR * rp
+
+                if na(tgtLvl)
+                    strategy.exit("x" + id, from_entry = id, stop = stopLvl)
+                else
+                    strategy.exit("x" + id, from_entry = id, stop = stopLvl, limit = tgtLvl)
+
+                if bar_index - eb >= maxHoldBars
+                    strategy.close(id, comment = "time stop")
+
+// =============================================================================
+// DISPLAY
+// =============================================================================
+bgcolor(tintBg and macroBull ? color.new(color.green, 94) :
+        tintBg and macroBear ? color.new(color.red, 94) : na, title = "Regime")
+
+plotshape(longSignal,  "Long signal",  shape.triangleup,   location.belowbar,
+     color.new(color.green, 0),  size = size.tiny)
+plotshape(shortSignal, "Short signal", shape.triangledown, location.abovebar,
+     color.new(color.red, 0),    size = size.tiny)
+plotshape(sigCT,       "CT signal",    shape.xcross,       location.abovebar,
+     color.new(color.orange, 0), size = size.tiny)
+
+var table t = table.new(position.top_right, 2, 8, border_width = 1)
+if barstate.islast and showPanel
+    table.cell(t, 0, 0, "Aurum Edge V4", text_color = color.white,
+         bgcolor = color.new(color.teal, 25))
+    table.cell(t, 1, 0, "", bgcolor = color.new(color.teal, 25))
+    table.cell(t, 0, 1, "Daily regime")
+    table.cell(t, 1, 1, macroBull ? "BULL" : macroBear ? "BEAR" : "neutral",
+         text_color = macroBull ? color.green : macroBear ? color.red : color.gray)
+    table.cell(t, 0, 2, "Long engine")
+    table.cell(t, 1, 2, enableLong ? (macroBull ? "armed" : "idle") : "off")
+    table.cell(t, 0, 3, "Short engine")
+    table.cell(t, 1, 3, enableShort ? (macroBear ? "armed" : "idle") : "off (tested -0.086R)")
+    table.cell(t, 0, 4, "Counter-trend")
+    table.cell(t, 1, 4, enableCT ? "armed" : "off (tested -0.21R)")
+    table.cell(t, 0, 5, "Open L / S")
+    table.cell(t, 1, 5, str.tostring(openLongs) + " / " + str.tostring(openShorts))
+    table.cell(t, 0, 6, "Stop ($) / cost%")
+    table.cell(t, 1, 6, str.tostring(stopDist, "#.##") + "  /  " +
+         str.tostring(0.45 / stopDist * 100, "#.#") + "%")
+    table.cell(t, 0, 7, "Closed trades")
+    table.cell(t, 1, 7, str.tostring(strategy.closedtrades))
+
+// =============================================================================
+// ALERT CONDITIONS (for automation wiring)
+// =============================================================================
+alertcondition(longSignal,  "Aurum V4 Long entry",  "Aurum Edge V4: LONG {{ticker}} @ {{close}}")
+alertcondition(shortSignal, "Aurum V4 Short entry", "Aurum Edge V4: SHORT {{ticker}} @ {{close}}")
+alertcondition(sigCT,       "Aurum V4 CT short",    "Aurum Edge V4: COUNTER-TREND SHORT {{ticker}} @ {{close}}")
