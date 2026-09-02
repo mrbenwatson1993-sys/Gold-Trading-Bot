@@ -1,0 +1,173 @@
+//@version=6
+// =============================================================================
+// Aurum Edge V2 - XAUUSD intraday
+//
+// Rebuilt from research rather than from chart intuition.  The full study lives
+// in this repository; the findings that shaped this script are:
+//
+//  1. COSTS DOMINATE.  On 15m gold the round-trip cost is 0.13-0.25 R at the
+//     stop sizes people normally use.  Several signals have a genuine gross
+//     edge and still lose money net.  Cost drag = cost / stop_distance, so the
+//     stop floor below is a first-class risk parameter, not a detail.
+//  2. GOLD DOES NOT TREND INTRADAY.  Lag-1 return autocorrelation is negative
+//     at 5m/15m/30m/60m and the variance ratio is < 1.  Breakout logic fights
+//     the process; opening-range breakout tested strongly negative.
+//  3. LIMIT-AT-RETRACE ENTRIES LOSE MORE THAN THEY SAVE.  They earn half the
+//     spread but only fill when the move is already failing.  Market-on-close
+//     confirmation beat them at every timeframe tested.
+//  4. NO HOUR OF DAY HAS A DIRECTIONAL EDGE that survives multiple-testing
+//     correction.  Session filtering is justified by *liquidity*, not by
+//     direction: movement per unit of spread is ~3.5x better at 13:00 UTC
+//     than at 04:00 UTC.
+//
+// Unlike V1.9.3 this script declares commission and slippage.  If you remove
+// them the backtest will look far better and mean far less.
+// =============================================================================
+
+strategy(
+     "Aurum Edge V2 - XAUUSD",
+     overlay              = true,
+     pyramiding           = 0,
+     initial_capital      = 10000,
+     currency             = currency.USD,
+     default_qty_type     = strategy.percent_of_equity,
+     default_qty_value    = 100,
+     process_orders_on_close = false,
+     calc_on_every_tick   = false,
+     calc_on_order_fills  = false,
+     commission_type      = strategy.commission.cash_per_contract,
+     commission_value     = 0.02,
+     slippage             = 3,
+     max_labels_count     = 200)
+
+// =============================================================================
+// INPUTS  - deliberately few. Every free parameter is a chance to fit noise.
+// =============================================================================
+string G_RISK = "Risk"
+string G_SESS = "Session"
+string G_SIG  = "Signal"
+string G_SAFE = "Safety"
+
+riskPerTradePct = input.float(0.5, "Risk per trade (% of equity)", 0.05, 5.0, 0.05, group = G_RISK)
+stopAtrMult     = input.float(2.5, "Stop distance (ATR)", 0.5, 6.0, 0.1, group = G_RISK,
+     tooltip = "Research optimum was ~2.5 ATR on 15m. Smaller stops raise cost drag sharply.")
+minStopDollars  = input.float(5.0, "Minimum stop ($)", 0.5, 30.0, 0.5, group = G_RISK,
+     tooltip = "THE most important setting. Round-trip cost is roughly $0.45-$1.20 on gold. " +
+               "A $5 stop puts cost at ~10-20% of risk; a $1 stop makes the strategy unrunnable.")
+maxStopDollars  = input.float(40.0, "Maximum stop ($)", 2.0, 100.0, 1.0, group = G_RISK)
+targetR         = input.float(2.0, "Target (R multiple)", 0.5, 6.0, 0.25, group = G_RISK)
+
+sessStartUtc = input.int(7,  "Session start (UTC hour)", 0, 23, group = G_SESS)
+sessEndUtc   = input.int(20, "Session end (UTC hour)",   1, 24, group = G_SESS,
+     tooltip = "Gold's movement-to-spread ratio is ~3.5x better at 13:00 UTC than 04:00 UTC. " +
+               "Trading the Asian session means paying nearly the whole bar range in spread.")
+skipFriday   = input.bool(true, "Skip late Friday", group = G_SESS)
+
+emaFast   = input.int(20,  "Fast EMA", 2, 200, group = G_SIG)
+emaSlow   = input.int(50,  "Slow EMA", 3, 300, group = G_SIG)
+emaTrend  = input.int(200, "Trend EMA", 10, 500, group = G_SIG)
+atrLen    = input.int(14,  "ATR length", 2, 100, group = G_SIG)
+requireSlope = input.bool(true, "Require fast-EMA slope confirmation", group = G_SIG)
+
+maxTradesPerDay = input.int(5, "Max trades per day", 1, 20, group = G_SAFE)
+maxDailyLossR   = input.float(3.0, "Daily loss limit (R)", 0.5, 20.0, 0.5, group = G_SAFE,
+     tooltip = "V1.9.3 had no circuit breaker. Gold's worst days cluster around news; " +
+               "this stops one of them from becoming a month.")
+maxHoldBars     = input.int(32, "Max hold (bars)", 4, 500, group = G_SAFE)
+
+// =============================================================================
+// ENGINE
+// =============================================================================
+ema20 = ta.ema(close, emaFast)
+ema50 = ta.ema(close, emaSlow)
+ema200 = ta.ema(close, emaTrend)
+atr = ta.atr(atrLen)
+
+plot(ema20,  "Fast EMA",  color = color.new(color.aqua, 0),   linewidth = 2)
+plot(ema50,  "Slow EMA",  color = color.new(color.orange, 0), linewidth = 1)
+plot(ema200, "Trend EMA", color = color.new(color.purple, 0), linewidth = 2)
+
+// ---- session gate (UTC, so it does not drift with DST) ----------------------
+int hUtc = hour(time, "UTC")
+bool inSession = sessStartUtc <= sessEndUtc
+     ? (hUtc >= sessStartUtc and hUtc < sessEndUtc)
+     : (hUtc >= sessStartUtc or hUtc < sessEndUtc)
+bool weekday = dayofweek != dayofweek.saturday and dayofweek != dayofweek.sunday
+bool lateFriday = skipFriday and dayofweek == dayofweek.friday and hUtc >= 19
+bool sessionOk = inSession and weekday and not lateFriday
+
+// ---- trend + pullback trigger ----------------------------------------------
+bool upStack = ema20 > ema50 and ema50 > ema200
+bool dnStack = ema20 < ema50 and ema50 < ema200
+bool upSlope = not requireSlope or ema20 > ema20[3]
+bool dnSlope = not requireSlope or ema20 < ema20[3]
+
+bool pullbackLong  = low <= ema20 and close > ema20 and close > open
+bool pullbackShort = high >= ema20 and close < ema20 and close < open
+
+bool longSignal  = sessionOk and upStack and upSlope and pullbackLong
+bool shortSignal = sessionOk and dnStack and dnSlope and pullbackShort
+
+// ---- risk sizing ------------------------------------------------------------
+float stopDist = math.min(math.max(atr * stopAtrMult, minStopDollars), maxStopDollars)
+float riskCash = strategy.equity * riskPerTradePct / 100.0
+float qty = stopDist > 0 ? riskCash / stopDist : na
+
+// ---- daily counters (bar-based, never wall-clock) ---------------------------
+var int tradesToday = 0
+var float dayStartEquity = na
+bool newDay = ta.change(time("D")) != 0
+if newDay
+    tradesToday := 0
+    dayStartEquity := strategy.equity
+
+float dayPnlR = na(dayStartEquity) or riskCash <= 0
+     ? 0.0
+     : (strategy.equity - dayStartEquity) / riskCash
+bool breakerOk = dayPnlR > -maxDailyLossR and tradesToday < maxTradesPerDay
+
+// ---- entries ----------------------------------------------------------------
+bool flat = strategy.position_size == 0
+var int barsInTrade = 0
+barsInTrade := flat ? 0 : barsInTrade + 1
+
+if longSignal and flat and breakerOk and not na(qty) and qty > 0
+    strategy.entry("L", strategy.long, qty = qty)
+    strategy.exit("L-x", from_entry = "L",
+         stop = close - stopDist, limit = close + stopDist * targetR)
+    tradesToday += 1
+
+if shortSignal and flat and breakerOk and not na(qty) and qty > 0
+    strategy.entry("S", strategy.short, qty = qty)
+    strategy.exit("S-x", from_entry = "S",
+         stop = close + stopDist, limit = close - stopDist * targetR)
+    tradesToday += 1
+
+// Time stop: an idea that has not worked within `maxHoldBars` is not working.
+if not flat and barsInTrade >= maxHoldBars
+    strategy.close_all("time stop")
+
+// =============================================================================
+// DIAGNOSTICS
+// =============================================================================
+var table t = table.new(position.top_right, 2, 6, border_width = 1)
+if barstate.islast
+    table.cell(t, 0, 0, "Aurum Edge V2", text_color = color.white,
+         bgcolor = color.new(color.blue, 30))
+    table.cell(t, 1, 0, "", bgcolor = color.new(color.blue, 30))
+    table.cell(t, 0, 1, "Stop distance ($)")
+    table.cell(t, 1, 1, str.tostring(stopDist, "#.##"))
+    table.cell(t, 0, 2, "Cost as % of risk")
+    // ~$0.45 round trip on a well-priced gold feed; scale to your broker.
+    table.cell(t, 1, 2, str.tostring(0.45 / stopDist * 100, "#.#") + "%")
+    table.cell(t, 0, 3, "Trades today")
+    table.cell(t, 1, 3, str.tostring(tradesToday) + " / " + str.tostring(maxTradesPerDay))
+    table.cell(t, 0, 4, "Day P&L (R)")
+    table.cell(t, 1, 4, str.tostring(dayPnlR, "#.##"))
+    table.cell(t, 0, 5, "Session open")
+    table.cell(t, 1, 5, sessionOk ? "YES" : "no")
+
+plotshape(longSignal and flat, "Long", shape.triangleup, location.belowbar,
+     color.new(color.green, 0), size = size.tiny)
+plotshape(shortSignal and flat, "Short", shape.triangledown, location.abovebar,
+     color.new(color.red, 0), size = size.tiny)
