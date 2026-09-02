@@ -30,3 +30,8 @@
   2024-04: 480/536 hours
 [ok] XAUUSD_202404.parquet  bars=30,359  median_spread=0.370
   2024-08: 120/534 hours
+  2024-08: 240/534 hours
+  2024-08: 360/534 hours
+  2024-08: 480/534 hours
+[ok] XAUUSD_202408.parquet  bars=30,180  median_spread=0.397
+  2024-12: 120/540 hours

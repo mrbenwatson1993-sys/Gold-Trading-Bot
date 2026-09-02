@@ -90,6 +90,7 @@ def walk_forward(
     tf: str,
     param_grid: list[dict],
     cost,
+    path: pd.DataFrame | None = None,
     train_months: int = 12,
     test_months: int = 3,
     step_months: int = 3,
@@ -99,6 +100,10 @@ def walk_forward(
     objective: str = "expectancy_r",
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     bars = add_features(resample(minutes, tf))
+    # The fill path only has to be fine enough to order a stop against a target.
+    # For 15m signals with $6+ stops, 5m bars resolve that as well as 1m at a
+    # fifth of the cost; the ambiguity counter stays visible either way.
+    path = minutes if path is None else path
     folds = make_folds(bars.index, train_months, test_months, step_months)
     oos, chosen = [], []
 
@@ -113,7 +118,7 @@ def walk_forward(
             sigs = build_signals(train, p)
             if len(sigs) < min_train_trades:
                 continue
-            r = bt_run(minutes, sigs, cost, max_concurrent=max_concurrent,
+            r = bt_run(path, sigs, cost, max_concurrent=max_concurrent,
                        max_daily_loss_r=max_daily_loss_r)
             if len(r.trades) < min_train_trades:
                 continue
@@ -125,7 +130,7 @@ def walk_forward(
         if best_p is None:
             continue
 
-        tr = bt_run(minutes, build_signals(test, best_p), cost,
+        tr = bt_run(path, build_signals(test, best_p), cost,
                     max_concurrent=max_concurrent, max_daily_loss_r=max_daily_loss_r)
         if len(tr.trades):
             t = tr.trades.copy()
@@ -182,11 +187,14 @@ def main(data_dir: Path, out_dir: Path, tf: str = "15min") -> None:
     ]
     print(f"walk-forward over {len(param_grid)} configs per fold, tf={tf}")
 
+    path = resample(minutes, "5min")
+    print(f"fill path: 5min ({len(path):,} bars)", flush=True)
+
     results = {}
     for name, cost in (("TIGHT", cost_presets.TIGHT),
                        ("REALISTIC", cost_presets.REALISTIC),
                        ("HARSH", cost_presets.HARSH)):
-        oos, chosen = walk_forward(minutes, tf, param_grid, cost)
+        oos, chosen = walk_forward(minutes, tf, param_grid, cost, path=path)
         results[name] = report(oos, chosen, len(param_grid), f"{tf} @ {name} costs")
         if name == "REALISTIC" and len(oos):
             oos.to_csv(out_dir / f"oos_trades_{tf}.csv", index=False)
