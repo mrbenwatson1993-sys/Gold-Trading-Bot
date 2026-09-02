@@ -8,9 +8,12 @@ data/
 logs/
 *.log
 
-# Generated outputs (regenerate with ./run_study.sh)
-reports/*.csv
+# Screenshots and plots
 reports/*.png
+
+# NOTE: reports/*.csv and reports/*.txt ARE tracked on purpose. They are the
+# study's actual results, they are small, and a reader should be able to check
+# the numbers in the README without first downloading 40MB of tick data.
 
 # Python
 __pycache__/
