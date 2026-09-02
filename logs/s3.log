@@ -1,0 +1,6 @@
+[skip] XAUUSD_202204.parquet
+  2022-08: 120/560 hours
+  2022-08: 240/560 hours
+  2022-08: 360/560 hours
+  2022-08: 480/560 hours
+[ok] XAUUSD_202208.parquet  bars=31,734  median_spread=0.348
