@@ -5,3 +5,13 @@
   2022-08: 480/560 hours
 [ok] XAUUSD_202208.parquet  bars=31,734  median_spread=0.348
   2022-12: 120/534 hours
+  2022-12: 240/534 hours
+  2022-12: 360/534 hours
+  2022-12: 480/534 hours
+[ok] XAUUSD_202212.parquet  bars=28,847  median_spread=0.360
+  2023-04: 120/492 hours
+  2023-04: 240/492 hours
+  2023-04: 360/492 hours
+  2023-04: 480/492 hours
+[ok] XAUUSD_202304.parquet  bars=26,327  median_spread=0.340
+  2023-08: 120/560 hours
