@@ -544,13 +544,18 @@ def daily_trend(
     # fires on the bar completing that run, so the window itself is uniform and
     # the bar *before* the window is what must sit on the old side.
     n = max(int(confirm_bars), 1)
-    run_up = above.rolling(n).sum() == n
-    run_dn = (~above).rolling(n).sum() == n
-    was_below = ~above.shift(n).fillna(False)
-    was_above = above.shift(n).fillna(False)
+    # Cast explicitly to bool at every step. `above.shift(n)` introduces NaN and
+    # upcasts out of boolean dtype, after which `~` is *bitwise* negation: ~True
+    # becomes -2 and ~False becomes -1, both truthy. That silently turned the
+    # cross test into "almost every bar" -- 936 crosses out of 1476 daily bars.
+    ab = above.fillna(False).astype(bool)
+    prev = ab.shift(n, fill_value=False).astype(bool)
 
-    cross_up = run_up & was_below
-    cross_dn = run_dn & was_above
+    run_up = ab.rolling(n).sum().eq(n).fillna(False).astype(bool)
+    run_dn = (~ab).rolling(n).sum().eq(n).fillna(False).astype(bool)
+
+    cross_up = run_up & ~prev
+    cross_dn = run_dn & prev
 
     for side, mask in ((1, cross_up), (-1, cross_dn)):
         for _, bar in d[mask.fillna(False)].iterrows():

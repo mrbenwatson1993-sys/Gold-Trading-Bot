@@ -137,3 +137,40 @@ def test_daily_trend_confirmation_bars_actually_produce_signals():
               for c in (1, 2, 3)}
     for c, k in counts.items():
         assert k > 0, f"confirm_bars={c} produced no signals at all: {counts}"
+
+    # A clean V crosses a 20-bar MA a small number of times. Asserting only
+    # "> 0" is far too weak: a later bug made `~shifted_bool` a *bitwise* negation
+    # (~True == -2, truthy), which fired on nearly every bar and still passed a
+    # "> 0" check. Pin an upper bound too.
+    assert counts[1] <= 6, f"implausibly many crosses on a monotone V: {counts}"
+    # More confirmation can only ever remove signals, never add them.
+    assert counts[1] >= counts[2] >= counts[3], f"not monotone in confirm_bars: {counts}"
+
+
+def test_daily_trend_cross_count_is_plausible_on_real_shaped_data():
+    """A 50-bar MA on a noisy series crosses occasionally, not constantly."""
+    import numpy as np
+    import pandas as pd
+    from aurum.data.bars import add_features
+    from aurum.strategies import library as lib
+    from aurum.strategies.base import RiskSpec
+
+    rng = np.random.default_rng(4)
+    n = 1500
+    px = 2000 + np.cumsum(rng.normal(0, 12, n))
+    idx = pd.date_range("2021-01-04", periods=n, freq="D", tz="UTC")
+    df = pd.DataFrame(
+        {
+            "ts": idx.tz_convert("UTC").tz_localize(None)
+                     .astype("datetime64[ms]").astype("int64"),
+            "open": px, "high": px + 8, "low": px - 8, "close": px,
+            "spread_med": np.full(n, 0.3), "ticks": np.full(n, 100),
+        },
+        index=idx,
+    )
+    bars = add_features(df)
+    spec = RiskSpec(stop_atr=3.0, target_r=99.0, min_stop_px=10.0, max_stop_px=200.0)
+    k = len(lib.daily_trend(bars, spec, ma_len=50))
+    # Real MA50 crossings land in the tens over ~1500 bars. Hundreds means the
+    # cross test has degenerated into "price is on this side of the MA".
+    assert 5 <= k <= 200, f"implausible MA50 cross count over {n} bars: {k}"

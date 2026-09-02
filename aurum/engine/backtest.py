@@ -38,6 +38,44 @@ from .costs import CostModel
 MARKET, LIMIT = 0, 1
 
 
+@dataclass(frozen=True)
+class Ladder:
+    """A step-trailing ("ladder") exit policy.
+
+    ``steps`` is an ordered sequence of ``(trigger_r, lock_r)`` rungs: once the
+    trade's favourable excursion reaches ``trigger_r`` multiples of initial
+    risk, the protective stop ratchets to ``lock_r`` (0.0 = breakeven, negative
+    = still at a loss but reduced, positive = profit locked). The stop only ever
+    moves in the trade's favour.
+
+    ``trail_atr`` optionally engages a continuous ATR trail once the final rung
+    is armed, so the ladder secures the early move and then lets the tail run.
+
+    ``give_back_frac`` is an alternative continuous rule: trail at a fixed
+    fraction of the best excursion so far, which adapts to how far the trade has
+    actually travelled rather than to volatility.
+    """
+    steps: tuple = ()
+    trail_atr: float = 0.0
+    give_back_frac: float = 0.0
+    target_r: float = 0.0          # 0 = no fixed target (let the ladder decide)
+
+    @property
+    def name(self) -> str:
+        if not self.steps and not self.trail_atr and not self.give_back_frac:
+            return f"fixed {self.target_r:g}R"
+        parts = []
+        if self.steps:
+            parts.append("+".join(f"{t:g}->{l:g}" for t, l in self.steps))
+        if self.trail_atr:
+            parts.append(f"trail{self.trail_atr:g}atr")
+        if self.give_back_frac:
+            parts.append(f"keep{1 - self.give_back_frac:.0%}")
+        if self.target_r:
+            parts.append(f"tp{self.target_r:g}R")
+        return " ".join(parts)
+
+
 @dataclass
 class Signal:
     ts: int                # ms, close of the decision bar that produced it
@@ -58,6 +96,7 @@ class Signal:
     # holding a fixed stop. Lets winners run past the fixed target.
     trail_atr: float = 0.0
     atr: float = 0.0        # ATR at signal time, for the trail
+    ladder: "Ladder | None" = None   # step-trailing policy; overrides the above
 
 
 @dataclass
@@ -135,8 +174,20 @@ def resolve(
         exit_idx, exit_px, reason = -1, np.nan, "timeout"
         stop_now = sig.stop_px
         be_done = False
-        trail_dist = sig.trail_atr * sig.atr if (sig.trail_atr > 0 and sig.atr > 0) else 0.0
-        use_target = sig.target_px if trail_dist <= 0 else np.nan
+        lad = sig.ladder
+        rungs = list(lad.steps) if lad else []
+        armed = 0                     # how many rungs have fired
+        best_exc = 0.0                # best favourable excursion on CLOSES, in R
+        peak_exc = 0.0                # best excursion on extremes, reporting only
+
+        if lad is not None:
+            trail_dist = lad.trail_atr * sig.atr if (lad.trail_atr > 0 and sig.atr > 0) else 0.0
+            give_back = lad.give_back_frac
+            use_target = (fill_px + lad.target_r * risk_px * sig.side) if lad.target_r > 0 else np.nan
+        else:
+            trail_dist = sig.trail_atr * sig.atr if (sig.trail_atr > 0 and sig.atr > 0) else 0.0
+            give_back = 0.0
+            use_target = sig.target_px if trail_dist <= 0 else np.nan
 
         j = fill_idx
         while j < n and ts[j] <= stop_deadline:
@@ -157,7 +208,12 @@ def resolve(
                 break
             if hit_stop:
                 exit_idx = j
-                reason = "breakeven" if (be_done and abs(stop_now - fill_px) < 1e-9) else "stop"
+                # Name the exit by which rung was protecting it, so the trade
+                # log shows what the ladder actually did.
+                locked = (stop_now - fill_px) * sig.side / risk_px
+                reason = ("stop" if locked < -0.02 else
+                          "breakeven" if abs(locked) <= 0.02 else
+                          f"ladder_lock_{locked:.2f}R")
                 exit_px = stop_now - costs.stop_slippage * sig.side
                 break
             if hit_tgt:
@@ -165,15 +221,52 @@ def resolve(
                 exit_px = use_target
                 break
 
-            # --- update protective stop using only information available now --
-            excursion = (bid_hi - fill_px) if long else (fill_px - ask_lo)
-            if sig.breakeven_r > 0 and not be_done and excursion >= sig.breakeven_r * risk_px:
+            # --- ratchet on CLOSED-BAR information -----------------------
+            # The stop is moved using the bar's close, not its running extreme,
+            # for two reasons. It is what a live implementation can actually do
+            # (you learn the bar's high only once the bar is over, and by then
+            # price has left it). And it removes the intrabar ordering problem:
+            # a stop derived from the close cannot have been hit earlier in the
+            # same bar, because the close is the last event in it. So the new
+            # level legitimately takes effect from the next bar.
+            #
+            # Ratcheting off the high instead looks far better and is fiction:
+            # it banked +0.076 R per trade on coin-flip entries at zero cost,
+            # where the true answer is zero.
+            stop_before = stop_now
+            bar_close = cl[j]
+            excursion = (bar_close - fill_px) * sig.side
+            best_exc = max(best_exc, excursion / risk_px)
+            # Peak excursion from the extremes is still recorded, for reporting
+            # only -- it never drives an exit.
+            peak_exc = max(peak_exc, ((bid_hi - fill_px) if long else (fill_px - ask_lo)) / risk_px)
+
+            for t_r, lock_r in rungs[armed:]:
+                if best_exc >= t_r:
+                    cand = fill_px + lock_r * risk_px * sig.side
+                    stop_now = max(stop_now, cand) if long else min(stop_now, cand)
+                    armed += 1
+                    be_done = True
+                else:
+                    break
+
+            if give_back > 0 and best_exc > 0:
+                cand = fill_px + best_exc * (1.0 - give_back) * risk_px * sig.side
+                stop_now = max(stop_now, cand) if long else min(stop_now, cand)
+
+            if trail_dist > 0 and armed >= len(rungs) and excursion > 0:
+                cand = (bar_close - trail_dist) if long else (bar_close + trail_dist)
+                stop_now = max(stop_now, cand) if long else min(stop_now, cand)
+
+            if sig.breakeven_r > 0 and not be_done and best_exc >= sig.breakeven_r:
                 cand = fill_px
                 stop_now = max(stop_now, cand) if long else min(stop_now, cand)
                 be_done = True
-            if trail_dist > 0 and excursion > 0:
-                cand = (bid_hi - trail_dist) if long else (ask_lo + trail_dist)
-                stop_now = max(stop_now, cand) if long else min(stop_now, cand)
+
+            # A close-derived stop takes effect from the next bar; no same-bar
+            # test is needed, and adding one would double-count the bar we just
+            # measured the close from.
+            del stop_before
             j += 1
 
         if exit_idx < 0:
@@ -201,6 +294,7 @@ def resolve(
                 "r": pnl / risk_per_trade,
                 "reason": reason,
                 "hold_min": int((ts[exit_idx] - ts[fill_idx]) / 60_000),
+                "mfe_r": peak_exc,
                 **sig.meta,
             }
         )
