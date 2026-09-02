@@ -39,15 +39,36 @@ first-class risk parameter**, not a detail. The predecessor's minimum stop of
 smaller than the spread. Those trades book free 2R winners in a backtest and
 are unconditionally unprofitable live.
 
-### 2. Gold does not trend intraday
+### 2. Intraday gold is a random walk; the edge lives at the daily horizon
 
-Lag-1 return autocorrelation is **negative at every timeframe tested**
-(−0.018 to −0.035 across 5m/15m/30m/60m) and the Lo-MacKinlay variance ratio
-is **0.95** — below 1, meaning mean reversion. Breakout logic fights the
-process. Opening-range breakout on London tested at **−0.43 R/trade
-(t = −3.77)**.
+Lo-MacKinlay variance ratios across horizons:
 
-Most retail gold bots are breakout bots. This is why.
+| Horizon | VR | z | Verdict |
+|---|---|---|---|
+| 5m | 0.989 | −2.05 | mildly mean-reverting (microstructure) |
+| 15m | 0.990 | −1.09 | random walk |
+| 1h | 0.989 | −0.56 | random walk |
+| 4h | 1.001 | +0.04 | random walk |
+| 1D | 0.890 | −1.32 | random walk |
+
+At the timeframes an intraday bot operates on there is **no systematic trend or
+reversion to harvest**. That is the root cause of every negative result below:
+the mechanisms are not badly built, they are extracting from a process with
+almost nothing in it, and then paying costs on top.
+
+The same data says the opposite about the **daily** horizon, where simple trend
+rules are consistently strong and hold up across parameters:
+
+| Rule | Ann. return | Sharpe | Max DD |
+|---|---|---|---|
+| Buy & hold | 3.7% | 0.26 | −22.8% |
+| Above/below 20d MA | 9.4% | 0.66 | −12.5% |
+| **Above/below 50d MA** | **11.9%** | **0.83** | **−9.4%** |
+| 20d momentum | 11.7% | 0.82 | −12.2% |
+
+Daily rules trade 10–20 times a *year*, so costs are negligible — a $0.80 round
+trip against a multi-week $60 move is ~1% of the move, versus 10–20% of risk
+intraday. This is the same reason CTAs have traded gold this way for decades.
 
 ### 3. Limit-at-retrace entries lose more than they save
 

@@ -1,0 +1,7 @@
+mechanism,n,gross_E_R,net_E_R,be_markup,be_cost_usd,verdict
+pullback,1135,-0.0088,-0.0996,,,no edge at ANY cost
+pullback 12-16,444,-0.0111,-0.1149,,,no edge at ANY cost
+fade,228,0.0819,0.0001,2.0,0.779,viable at retail cost
+expansion,800,0.0502,-0.0368,1.11,0.464,viable at retail cost
+sweep,708,-0.0111,-0.1001,,,no edge at ANY cost
+zone,2693,-0.0188,-0.111,,,no edge at ANY cost

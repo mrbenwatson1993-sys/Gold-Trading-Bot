@@ -506,3 +506,55 @@ def vwap_reversion(
             if sig:
                 out.append(sig)
     return out
+
+
+# --------------------------------------------------------------------------
+# H10. Daily trend following
+# --------------------------------------------------------------------------
+def daily_trend(
+    df: pd.DataFrame,
+    spec: RiskSpec,
+    ma_len: int = 50,
+    confirm_bars: int = 1,
+    tag: str = "DTREND",
+) -> list[Signal]:
+    """Enter when price crosses its moving average; ride with a trailing stop.
+
+    This is the horizon where gold actually pays.  Intraday, variance ratios sit
+    at ~1.0 and there is nothing systematic to extract; on daily bars simple
+    trend rules produce a materially better Sharpe than buy-and-hold, and hold
+    up across a wide range of lookbacks rather than at one lucky setting.
+
+    The economics are completely different from an intraday system.  A $0.80
+    round trip against a multi-week move worth $60 is about 1% of the move.
+    The same $0.80 against an intraday $8 stop is 10% of risk.  Cost stops
+    being the dominant term, which is why this works and the 15m versions do
+    not.
+
+    Expects ``df`` to be daily bars.  ``spec.trail_atr`` should be non-zero:
+    a fixed target defeats the point of trend following.
+    """
+    out: list[Signal] = []
+    d = df.copy()
+    ma = d["close"].rolling(ma_len).mean()
+    above = d["close"] > ma
+
+    # Require `confirm_bars` consecutive closes on the new side before acting,
+    # which cuts the whipsaw trades that cluster around a flat MA.
+    stable = above.rolling(confirm_bars).apply(lambda x: x.all() or not x.any(), raw=True)
+    cross_up = above & ~above.shift(1).fillna(False) & (stable == 1)
+    cross_dn = ~above & above.shift(1).fillna(False) & (stable == 1)
+
+    for side, mask in ((1, cross_up), (-1, cross_dn)):
+        for _, bar in d[mask.fillna(False)].iterrows():
+            atr = bar["atr14"]
+            if not np.isfinite(atr) or atr <= 0:
+                continue
+            sig = make_signal(
+                bar["ts"], side, bar["close"], atr, spec, tag,
+                entry_type=MARKET, bar_range=float(bar["range"]),
+                meta={"ma_len": ma_len},
+            )
+            if sig:
+                out.append(sig)
+    return out

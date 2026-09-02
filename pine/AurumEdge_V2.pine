@@ -9,9 +9,12 @@
 //     stop sizes people normally use.  Several signals have a genuine gross
 //     edge and still lose money net.  Cost drag = cost / stop_distance, so the
 //     stop floor below is a first-class risk parameter, not a detail.
-//  2. GOLD DOES NOT TREND INTRADAY.  Lag-1 return autocorrelation is negative
-//     at 5m/15m/30m/60m and the variance ratio is < 1.  Breakout logic fights
-//     the process; opening-range breakout tested strongly negative.
+//  2. INTRADAY GOLD IS STATISTICALLY A RANDOM WALK.  Lo-MacKinlay variance
+//     ratios sit at 0.99-1.00 with |z| < 1.4 at 15m, 1h, 4h and daily.  There
+//     is no systematic trend or reversion to harvest at intraday horizons, so
+//     no entry rule at this timeframe has much to extract before costs.
+//     Gold's tradeable edge shows up at the DAILY horizon (50d MA rule:
+//     Sharpe 0.83 vs 0.26 buy-and-hold), where costs are negligible.
 //  3. LIMIT-AT-RETRACE ENTRIES LOSE MORE THAN THEY SAVE.  They earn half the
 //     spread but only fill when the move is already failing.  Market-on-close
 //     confirmation beat them at every timeframe tested.
