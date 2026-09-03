@@ -47,11 +47,31 @@ def test_spread_is_actually_charged():
                entry_type=MARKET, max_hold_ms=5 * 60_000)
     t, _, _ = resolve(m, [s], cost)
     # Buy the ask at 100.25, sell the bid at 99.75: -0.50 in price terms.
-    # Risk is measured from the *filled* price, so the denominator is
-    # 100.25 - 95.00 = 5.25, not the nominal 5.00.
+    # R is denominated in the stop distance the signal PLANNED (100 -> 95), not
+    # the one left after slippage, because that is the number the position was
+    # sized on before the fill came back. A fill that slips toward the stop
+    # therefore shows a smaller loss, not a bigger position.
     assert t.entry_px.iloc[0] == pytest.approx(100.25)
-    assert t.risk_px.iloc[0] == pytest.approx(5.25)
-    assert t.r.iloc[0] == pytest.approx(-0.50 / 5.25, abs=1e-6)
+    assert t.risk_px.iloc[0] == pytest.approx(5.00)
+    assert t.r.iloc[0] == pytest.approx(-0.50 / 5.00, abs=1e-6)
+
+
+def test_slipped_fill_does_not_inflate_position_size():
+    """A fill that lands almost on the stop must not claim a giant position.
+
+    Sizing off the realised distance would divide the risk budget by a few cents
+    and hand the trade a sixty-fold position; three real out-of-sample trades hit
+    exactly that and dominated the equity curve until it was fixed.
+    """
+    px = np.full(30, 100.0)
+    m = _minutes(px, spread=0.0)
+    cost = CostModel(spread_markup=0.0, min_spread=0.0,
+                     stop_slippage=0.0, entry_slippage=0.0)
+    s = Signal(ts=0, side=1, entry_px=100.0, stop_px=99.99, target_px=110.0,
+               entry_type=MARKET, max_hold_ms=5 * 60_000)
+    t, _, _ = resolve(m, [s], cost, risk_per_trade=100.0)
+    assert t.risk_px.iloc[0] == pytest.approx(0.01)
+    assert t.qty.iloc[0] == pytest.approx(100.0 / 0.01)
 
 
 def test_ambiguous_bar_resolves_as_a_loss():

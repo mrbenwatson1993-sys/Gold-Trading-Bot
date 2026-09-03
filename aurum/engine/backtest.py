@@ -164,8 +164,19 @@ def resolve(
                 expired += 1
                 continue
 
-        risk_px = abs(fill_px - sig.stop_px)
-        if risk_px <= 0 or not np.isfinite(risk_px):
+        # Size and account in R against the stop distance the signal PLANNED,
+        # not the one that survived slippage. A trader picks the lot size before
+        # the fill comes back; if the entry slips halfway to the stop, the loss
+        # is smaller in dollars but the position is not bigger. Sizing off the
+        # realised distance instead lets a badly-slipped fill claim an enormous
+        # position and a nonsense R multiple - three trades in the out-of-sample
+        # log filled within $0.14 of their stop and were being scored on a
+        # sixty-fold inflated size. It also makes the ladder rungs sit where the
+        # Pine implementation puts them, which is at ATR-derived distances.
+        plan_px = abs(sig.entry_px - sig.stop_px)
+        fill_risk = abs(fill_px - sig.stop_px)
+        risk_px = plan_px if plan_px > 0 and np.isfinite(plan_px) else fill_risk
+        if risk_px <= 0 or not np.isfinite(risk_px) or fill_risk <= 0:
             continue
         qty = risk_per_trade / risk_px
 
