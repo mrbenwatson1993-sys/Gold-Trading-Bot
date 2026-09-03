@@ -1,0 +1,73 @@
+policy,maxOpen,risk,rules,accts,passed,fail_daily,fail_dd,running,med_days
+as_shipped (48h),5,0.15,typical 2-step (5% daily / 10% static),183,88.0,0.0,0.0,12.0,90
+as_shipped (48h),5,0.15,trailing-DD (5% daily / 6% trailing),183,35.0,0.0,53.0,12.0,35
+as_shipped (48h),5,0.15,strict 1-step (4% daily / 6% trailing),183,35.0,0.0,53.0,12.0,35
+as_shipped (48h),5,0.25,typical 2-step (5% daily / 10% static),183,78.1,0.0,9.8,12.0,35
+as_shipped (48h),5,0.25,trailing-DD (5% daily / 6% trailing),183,32.8,0.0,57.4,9.8,14
+as_shipped (48h),5,0.25,strict 1-step (4% daily / 6% trailing),183,32.8,0.0,57.4,9.8,14
+as_shipped (48h),5,0.5,typical 2-step (5% daily / 10% static),183,60.7,7.7,21.9,9.8,8
+as_shipped (48h),5,0.5,trailing-DD (5% daily / 6% trailing),183,25.1,2.7,63.4,8.7,2
+as_shipped (48h),5,0.5,strict 1-step (4% daily / 6% trailing),183,24.6,10.9,55.7,8.7,2
+flat_by_friday,5,0.15,typical 2-step (5% daily / 10% static),183,87.4,0.0,0.0,12.6,85
+flat_by_friday,5,0.15,trailing-DD (5% daily / 6% trailing),183,35.0,0.0,52.5,12.6,36
+flat_by_friday,5,0.15,strict 1-step (4% daily / 6% trailing),183,35.0,0.0,52.5,12.6,36
+flat_by_friday,5,0.25,typical 2-step (5% daily / 10% static),183,76.5,0.0,11.5,12.0,35
+flat_by_friday,5,0.25,trailing-DD (5% daily / 6% trailing),183,33.3,0.0,56.8,9.8,13
+flat_by_friday,5,0.25,strict 1-step (4% daily / 6% trailing),183,33.3,0.0,56.8,9.8,13
+flat_by_friday,5,0.5,typical 2-step (5% daily / 10% static),183,60.1,8.7,21.3,9.8,8
+flat_by_friday,5,0.5,trailing-DD (5% daily / 6% trailing),183,26.2,2.7,62.3,8.7,2
+flat_by_friday,5,0.5,strict 1-step (4% daily / 6% trailing),183,25.7,10.9,54.6,8.7,2
+hold_24h_flat_fri,5,0.15,typical 2-step (5% daily / 10% static),183,88.0,0.0,0.0,12.0,91
+hold_24h_flat_fri,5,0.15,trailing-DD (5% daily / 6% trailing),183,36.6,0.0,51.4,12.0,41
+hold_24h_flat_fri,5,0.15,strict 1-step (4% daily / 6% trailing),183,36.6,0.0,51.4,12.0,41
+hold_24h_flat_fri,5,0.25,typical 2-step (5% daily / 10% static),183,78.7,0.0,9.3,12.0,41
+hold_24h_flat_fri,5,0.25,trailing-DD (5% daily / 6% trailing),183,30.6,0.0,57.4,12.0,15
+hold_24h_flat_fri,5,0.25,strict 1-step (4% daily / 6% trailing),183,30.6,0.0,57.4,12.0,15
+hold_24h_flat_fri,5,0.5,typical 2-step (5% daily / 10% static),183,60.7,4.4,24.0,10.9,8
+hold_24h_flat_fri,5,0.5,trailing-DD (5% daily / 6% trailing),183,26.8,2.2,62.3,8.7,3
+hold_24h_flat_fri,5,0.5,strict 1-step (4% daily / 6% trailing),183,26.2,6.6,58.5,8.7,3
+no_overnight (intraday),5,0.15,typical 2-step (5% daily / 10% static),183,86.9,0.0,0.5,12.6,120
+no_overnight (intraday),5,0.15,trailing-DD (5% daily / 6% trailing),183,41.5,0.0,45.9,12.6,59
+no_overnight (intraday),5,0.15,strict 1-step (4% daily / 6% trailing),183,41.5,0.0,45.9,12.6,59
+no_overnight (intraday),5,0.25,typical 2-step (5% daily / 10% static),183,73.2,0.0,14.8,12.0,51
+no_overnight (intraday),5,0.25,trailing-DD (5% daily / 6% trailing),183,28.4,0.0,61.7,9.8,20
+no_overnight (intraday),5,0.25,strict 1-step (4% daily / 6% trailing),183,28.4,0.0,61.7,9.8,20
+no_overnight (intraday),5,0.5,typical 2-step (5% daily / 10% static),183,60.1,0.0,29.5,10.4,13
+no_overnight (intraday),5,0.5,trailing-DD (5% daily / 6% trailing),183,21.3,0.0,69.9,8.7,3
+no_overnight (intraday),5,0.5,strict 1-step (4% daily / 6% trailing),183,21.3,1.6,68.3,8.7,3
+flat_by_friday,2,0.25,typical 2-step (5% daily / 10% static),183,84.7,0.0,0.0,15.3,139
+flat_by_friday,2,0.25,trailing-DD (5% daily / 6% trailing),183,44.8,0.0,39.9,15.3,87
+flat_by_friday,2,0.25,strict 1-step (4% daily / 6% trailing),183,44.8,0.0,39.9,15.3,87
+flat_by_friday,2,0.5,typical 2-step (5% daily / 10% static),183,74.3,0.0,13.7,12.0,50
+flat_by_friday,2,0.5,trailing-DD (5% daily / 6% trailing),183,30.1,0.0,60.1,9.8,16
+flat_by_friday,2,0.5,strict 1-step (4% daily / 6% trailing),183,30.1,1.1,59.0,9.8,16
+flat_by_friday,3,0.25,typical 2-step (5% daily / 10% static),183,82.5,0.0,4.9,12.6,76
+flat_by_friday,3,0.25,trailing-DD (5% daily / 6% trailing),183,30.6,0.0,56.8,12.6,29
+flat_by_friday,3,0.25,strict 1-step (4% daily / 6% trailing),183,30.6,0.0,56.8,12.6,29
+flat_by_friday,3,0.5,typical 2-step (5% daily / 10% static),183,61.2,0.0,26.8,12.0,17
+flat_by_friday,3,0.5,trailing-DD (5% daily / 6% trailing),183,27.3,0.0,62.8,9.8,8
+flat_by_friday,3,0.5,strict 1-step (4% daily / 6% trailing),183,26.8,3.3,60.1,9.8,8
+flat_by_friday,5,0.25,typical 2-step (5% daily / 10% static),183,76.5,0.0,11.5,12.0,35
+flat_by_friday,5,0.25,trailing-DD (5% daily / 6% trailing),183,33.3,0.0,56.8,9.8,13
+flat_by_friday,5,0.25,strict 1-step (4% daily / 6% trailing),183,33.3,0.0,56.8,9.8,13
+flat_by_friday,5,0.5,typical 2-step (5% daily / 10% static),183,60.1,8.7,21.3,9.8,8
+flat_by_friday,5,0.5,trailing-DD (5% daily / 6% trailing),183,26.2,2.7,62.3,8.7,2
+flat_by_friday,5,0.5,strict 1-step (4% daily / 6% trailing),183,25.7,10.9,54.6,8.7,2
+hold_24h_flat_fri,2,0.25,typical 2-step (5% daily / 10% static),183,86.9,0.0,0.5,12.6,132
+hold_24h_flat_fri,2,0.25,trailing-DD (5% daily / 6% trailing),183,46.4,0.0,41.0,12.6,84
+hold_24h_flat_fri,2,0.25,strict 1-step (4% daily / 6% trailing),183,46.4,0.0,41.0,12.6,84
+hold_24h_flat_fri,2,0.5,typical 2-step (5% daily / 10% static),183,71.0,0.0,16.9,12.0,50
+hold_24h_flat_fri,2,0.5,trailing-DD (5% daily / 6% trailing),183,27.9,0.0,62.3,9.8,17
+hold_24h_flat_fri,2,0.5,strict 1-step (4% daily / 6% trailing),183,27.9,0.5,61.7,9.8,17
+hold_24h_flat_fri,3,0.25,typical 2-step (5% daily / 10% static),183,85.2,0.0,2.7,12.0,87
+hold_24h_flat_fri,3,0.25,trailing-DD (5% daily / 6% trailing),183,30.1,0.0,57.9,12.0,29
+hold_24h_flat_fri,3,0.25,strict 1-step (4% daily / 6% trailing),183,30.1,0.0,57.9,12.0,29
+hold_24h_flat_fri,3,0.5,typical 2-step (5% daily / 10% static),183,66.1,0.0,21.9,12.0,23
+hold_24h_flat_fri,3,0.5,trailing-DD (5% daily / 6% trailing),183,26.2,0.0,63.9,9.8,9
+hold_24h_flat_fri,3,0.5,strict 1-step (4% daily / 6% trailing),183,26.2,0.0,63.9,9.8,9
+hold_24h_flat_fri,5,0.25,typical 2-step (5% daily / 10% static),183,78.7,0.0,9.3,12.0,41
+hold_24h_flat_fri,5,0.25,trailing-DD (5% daily / 6% trailing),183,30.6,0.0,57.4,12.0,15
+hold_24h_flat_fri,5,0.25,strict 1-step (4% daily / 6% trailing),183,30.6,0.0,57.4,12.0,15
+hold_24h_flat_fri,5,0.5,typical 2-step (5% daily / 10% static),183,60.7,4.4,24.0,10.9,8
+hold_24h_flat_fri,5,0.5,trailing-DD (5% daily / 6% trailing),183,26.8,2.2,62.3,8.7,3
+hold_24h_flat_fri,5,0.5,strict 1-step (4% daily / 6% trailing),183,26.2,6.6,58.5,8.7,3

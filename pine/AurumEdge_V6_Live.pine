@@ -127,6 +127,24 @@ alertExit  = input.bool(true, "Alert on exit", group = G_ALR)
 // Shortening the hold lowers expectancy per trade but raises the trade count by
 // about the same proportion, so the first two rules cost almost nothing. Banning
 // overnight holds entirely is the one that actually hurts.
+// SETTINGS THAT ACTUALLY PASS A CHALLENGE. 183 overlapping accounts were
+// simulated per configuration, a fresh one started every week, marked to market
+// minute by minute on floating equity - which is what a prop risk engine
+// watches - and run until it either made 10% or breached:
+//
+//   STATIC 10% max drawdown (typical 2-step):
+//     risk 0.15%, max open 5, defaults otherwise ->  88% passed, median 90 days,
+//     zero daily-loss breaches, zero drawdown breaches.
+//   TRAILING 6% max drawdown:
+//     risk 0.25%, max open 2, 24h time stop  ->  46% passed. This is the best
+//     of everything tested and it is still a coin flip. Trailing-drawdown
+//     accounts are a bad fit for this strategy and no session rule fixes that.
+//
+// The binding constraint is never the daily loss limit - at 0.25% risk or below
+// there were zero daily breaches in any configuration. It is floating drawdown:
+// 19% at 0.25% risk, 12% at 0.15%, and almost unchanged by any session rule,
+// because it comes from the ladder giving back open profit when a trend turns,
+// not from holding overnight. Only risk per trade and max open positions move it.
 flatFriday = input.bool(false, "Flatten everything before the weekend", group = G_PROP,
      tooltip = "Removes weekend gap risk for -0.4% of total profit. 5.6% of weekends " +
                "gapped more than 1x the stop distance; the worst was 4x. With five " +
