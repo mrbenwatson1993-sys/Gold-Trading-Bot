@@ -1,0 +1,13 @@
+policy,risk,worst_day,days_le_4pct,days_le_5pct,worst_float_dd,final
+as_shipped (48h),0.15,-3.32,0,0,11.57,84.7
+as_shipped (48h),0.25,-5.53,2,1,19.29,141.2
+as_shipped (48h),0.5,-11.06,43,15,38.58,282.4
+flat_by_friday,0.15,-3.32,0,0,11.53,84.5
+flat_by_friday,0.25,-5.53,2,1,19.22,140.8
+flat_by_friday,0.5,-11.06,42,15,38.44,281.6
+hold_24h_flat_fri,0.15,-1.97,0,0,11.75,83.9
+hold_24h_flat_fri,0.25,-3.28,0,0,19.59,139.9
+hold_24h_flat_fri,0.5,-6.57,24,7,39.18,279.8
+no_overnight (intraday),0.15,-1.32,0,0,12.04,64.2
+no_overnight (intraday),0.25,-2.19,0,0,20.07,106.9
+no_overnight (intraday),0.5,-4.39,5,0,40.15,213.9
