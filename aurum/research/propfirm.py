@@ -250,11 +250,14 @@ def rolling_accounts(eq: pd.Series, rules: PropRules, every_days: int = 7) -> pd
     """
     day = eq.index.normalize()
     sod_full = eq.groupby(day).transform("first").to_numpy()
-    day_codes = day.asi8
+    # Compare days by value, not by .asi8: two DatetimeIndexes can carry
+    # different resolutions (ns vs us), and their integer views are then simply
+    # not comparable. That mismatch silently emptied this table once already.
+    day_codes = pd.factorize(day)[0]
 
     starts = pd.date_range(eq.index[0], eq.index[-1] - pd.Timedelta(days=60),
                            freq=f"{every_days}D", tz="UTC")
-    idx = np.searchsorted(eq.index.asi8, starts.asi8, "left")
+    idx = eq.index.searchsorted(starts, "left")
     rows = []
     for k in idx:
         if len(eq) - k < 1000:
