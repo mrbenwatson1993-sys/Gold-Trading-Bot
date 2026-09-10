@@ -1,4 +1,64 @@
-# Percoco $50 Morning Model — TradingView Bot
+# TradingView Trading Tools
+
+Two mechanical trading models from YouTube, implemented in Pine Script v6.
+
+| File | What it is | Use it for |
+|---|---|---|
+| `indicator/session_sweep_mss_618.pine` | **Session sweep → MSS → 0.618 alerts** | **Alerts you act on manually** |
+| `strategy/percoco_50_morning_model.pine` | Percoco 15m FVG → 1m CHoCH model | Backtesting, auto-execution |
+
+---
+
+# 1 · Session Sweep → MSS → 0.618  ·  alert tool
+
+From **"The 5-Minute Scalping Strategy I Use Every Single Day"**. A 5-minute forex
+model in three mechanical steps. This one is an **indicator**, not a strategy: it
+watches the chart and sends you a ticket with the entry, stop and target so you place
+the order yourself.
+
+**Setup guide: [docs/ALERTS.md](docs/ALERTS.md)** — read this one, it's the whole
+workflow.
+
+### The three steps
+
+| # | Step | What the tool does |
+|---|---|---|
+| 1 | **Session sweep** — wait for the previous session's box high or low to be taken, whichever goes **first** | Draws Asia / London / New York boxes itself (no third-party indicator needed), freezes each range, watches the next session for the sweep |
+| 2 | **Market structure shift** — a **body close** through the last fractal | Williams fractals with adjustable strength; wick-throughs are rejected, as the video insists |
+| 3 | **Fib on the leg that made the shift** — enter **0.618**, stop at the leg extreme, TP at **2:1** | Draws the leg, prices the 0.618, and sends entry / stop / target |
+
+Sweep the **high** → hunt shorts. Sweep the **low** → hunt longs.
+
+### What it sends
+
+```
+🔻 SETUP ARMED · SHORT GBPUSD 5
+New York swept London HIGH · structure shifted
+Entry (0.618): 1.27345
+Stop:          1.27612
+Target (2R):   1.26811
+Risk:          26.7 pips
+```
+
+Plus optional alerts for the sweep, for the tap on the 0.618, for the outcome, and —
+the one that saves you from a stale order — **LEVEL MOVED**, when the leg extends
+after the shift and the 0.618 relocates.
+
+### Worth knowing
+
+- **Sessions are drawn internally.** The video uses LuxAlgo *Sessions* and *Fractals by
+  Rachel T*; neither is required here. Session windows and fractal strength are inputs.
+- **Two-sided sweep bars are a guess.** If one candle takes both sides of the previous
+  session, no candle can tell you which went first. The tool assumes a down-closing bar
+  ran the high first. Check a lower timeframe on those.
+- **The evidence is thin.** The video shows a handful of examples (3 wins, 2 losses)
+  and puts the "years of backtested data" behind a Discord join. At 2:1 you need better
+  than a 33% win rate to break even before spread. Log the alerts for a month before
+  you trade them.
+
+---
+
+# 2 · Percoco $50 Morning Model  ·  strategy
 
 A mechanical Pine Script v6 implementation of the trading model Craig Percoco
 teaches in **"If You Only Have $50 To Trade With, Do This Every Morning"**
@@ -7,11 +67,8 @@ teaches in **"If You Only Have $50 To Trade With, Do This Every Morning"**
 It reproduces the five steps he lays out, his stop and target placement, and his
 R-factor / percentage-scaling risk model — as a backtestable, alertable strategy.
 
-```
-strategy/percoco_50_morning_model.pine   the bot
-docs/STRATEGY.md                         every rule mapped to its source quote + input
-docs/AUTOMATION.md                       alerts, JSON webhook payload, broker bridging
-```
+Rules mapped to source quotes: [docs/STRATEGY.md](docs/STRATEGY.md).
+Webhook automation: [docs/AUTOMATION.md](docs/AUTOMATION.md).
 
 ---
 
