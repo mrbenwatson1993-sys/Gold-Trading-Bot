@@ -51,6 +51,12 @@ i_london  = input.session("0800-1300", "London",   group = G1)
 i_ny      = input.session("1300-2100", "New York", group = G1)
 i_showBox = input.bool(true,  "Draw the session boxes", group = G1)
 i_keepBox = input.int(9, "Boxes to keep on screen", minval = 1, maxval = 60, group = G1)
+i_maxAge  = input.float(12, "Previous range goes stale after (hours, 0 = never)",
+     minval = 0, maxval = 200, step = 1, group = G1,
+     tooltip = "Running every session means Monday's Asia would otherwise sweep FRIDAY " +
+               "New York's range - 50-odd hours and a weekend gap old. 12 covers every " +
+               "normal handover (the longest is the 3h gap before Asia) and rejects the " +
+               "weekend carry-over. Set 0 to allow it.")
 
 i_useAsia = input.bool(true, "Hunt in Asia",     group = G1, inline = "h")
 i_useLon  = input.bool(true, "London",           group = G1, inline = "h")
@@ -156,6 +162,7 @@ var array<label> tags   = array.new<label>()
 var float prevHi   = na
 var float prevLo   = na
 var int   prevSess = 0
+var int   prevEnd  = na
 
 // per-session setup state
 var int   bias      = 0        // -1 hunting shorts, +1 hunting longs
@@ -184,6 +191,7 @@ if sessionChanged
         prevHi   := sessHi
         prevLo   := sessLo
         prevSess := curSess
+        prevEnd  := time
     curSess := sessNow
     setups  := 0
     sessHi  := sessNow != 0 ? high : na
@@ -255,7 +263,9 @@ else
 //  STEP 1  -  the sweep
 // ═══════════════════════════════════════════════════════════════════════════════
 sweepNow = false
-if sessNow != 0 and sessionEnabled and not swept and not na(prevHi) and not na(prevLo)
+rangeFresh = i_maxAge <= 0 or (not na(prevEnd) and (time - prevEnd) <= i_maxAge * 3600000)
+
+if sessNow != 0 and sessionEnabled and rangeFresh and not swept and not na(prevHi) and not na(prevLo)
     hitHi = high > prevHi
     hitLo = low  < prevLo
     if hitHi or hitLo
@@ -446,6 +456,7 @@ f_r(row, k, v, c) =>
 if i_showTbl and barstate.islast
     step = not sessionEnabled ? "session off" :
            sessNow == 0 ? "no session" :
+           not rangeFresh ? "prev range stale - skipping" :
            not swept ? "1 · waiting for the sweep" :
            mss == 0 ? "2 · waiting for the shift" :
            filled ? "in trade" : "3 · ARMED at the 0.618"

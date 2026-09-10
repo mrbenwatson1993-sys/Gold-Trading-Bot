@@ -107,6 +107,43 @@ out.
 If that bothers you, run `UTC` and accept that London open moves instead. There is no
 setting that keeps all three sessions perfectly anchored.
 
+## Running all three sessions, every day
+
+All three toggles ship **on**, so there is nothing to switch — just confirm *Trade
+Asia / London / New York* are all ticked. With *Max setups per session* at 1 that is up
+to **3 setups per pair per day**.
+
+Two guards were added specifically because you're running the full schedule:
+
+**Stale previous range.** *Previous range goes stale after (hours)* — default **12**.
+Without it, Monday's Asia session sweeps **Friday New York's** range: a level roughly 51
+hours old with a weekend gap sitting in the middle of it. 12 hours clears every normal
+handover (the longest is the 3-hour quiet spell before Asia opens) and rejects the
+weekend carry-over. The status panel shows `prev range stale - skipping` when it bites,
+so you'll know why Monday's first session was quiet. Set it to 0 if you'd rather take
+those.
+
+**Weekend flat.** *Close any open trade before the weekend* — default **on** in the
+backtest. A stop does not protect you across a Sunday gap; that's how a −1R becomes
+−4R. It closes anything still open when Friday's New York session ends. It will change
+your results, and that is the point — leave it on unless you can explain why holding
+through a gap is worth it.
+
+### The arithmetic to look at before you start
+
+Three sessions × two pairs = **up to 6 setups a day**. At 1% each that is 6% of the
+account at risk daily — and per the correlation warning at the top, those six positions
+are mostly one bet on the dollar wearing six hats.
+
+Concretely: London sweeps the Asia low on both EURUSD and GBPUSD, both shift bullish,
+both fill. That's 2% on "the dollar falls this morning". If New York then does the same
+thing, you're at 4% on the same idea before lunch.
+
+Decide a **daily risk cap** now, while it's arithmetic rather than a losing morning.
+Something like: 1% per trade, 3% total open, stop for the day at −3R. The backtest's
+*worst losing streak* row will tell you whether that cap would have cut off trades that
+later won — run it and find out before you pick the number, not after.
+
 ## Two things worth testing before you commit
 
 **Turn Asia off.** EUR and GBP liquidity is thin during Asian hours, so the Asia session
