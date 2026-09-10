@@ -1,0 +1,767 @@
+//@version=6
+// ═══════════════════════════════════════════════════════════════════════════════
+//  PERCOCO $50 MORNING MODEL
+//  15m Fair Value Gap  →  1m Change of Character  →  1m FVG @ 0.5-0.618  →  1:4
+// ═══════════════════════════════════════════════════════════════════════════════
+//
+//  A mechanical implementation of the model described in Craig Percoco's video
+//  "If You Only Have $50 To Trade With, Do This Every Morning" (Sep 2026).
+//
+//  THE FIVE STEPS (verbatim from the video, in order):
+//    1. Find a 15-minute fair value gap - three candles where candle 1's wick and
+//       candle 3's wick do not overlap. Price pulls into the gap and responds off
+//       it, continuing in your direction.
+//    2. Drop to the 1-minute chart and wait for the 9:30 a.m. New York open. Wait
+//       for a CHANGE OF CHARACTER - price breaking out of the previous trend
+//       (e.g. downtrend, then a new high above all the prior highs).
+//    3. Identify a 1-minute fair value gap, YET TO BE FILLED, inside that change
+//       of character. Note its exact midpoint.
+//    4. Draw a Fibonacci retracement from the beginning of the move to where you
+//       are now. Confirm the gap sits between the 0.5 and 0.618 levels.
+//    5. Limit order at (or just above) the midpoint of the gap. Stop loss outside
+//       the fair-value-gap-producing sequence. Target 3-4 risk factors.
+//
+//  RISK MODEL (also from the video):
+//    - Everything is measured in R. 1:4 R:R only needs a 20% win rate to break
+//      even; he runs 30-40%.
+//    - PERCENTAGE SCALING: risk a fixed % of the CURRENT balance, so risk shrinks
+//      automatically through a drawdown and grows as the account grows.
+//    - His small-account ramp: 10% per trade until roughly $1,000, then step down
+//      to 5%, and keep stepping down as the account scales.
+//    - Position size = desired $ risk / (entry - stop) / point value.
+//
+//  ── HOW TO USE ───────────────────────────────────────────────────────────────
+//  Put this on a 1-MINUTE chart. Leave "Context timeframe" at 15.
+//  Read docs/STRATEGY.md and docs/AUTOMATION.md in this repo before going live.
+//
+//  ⚠ Educational code. Backtest results are not future results. A 10% risk
+//    setting can halve a small account in a normal losing streak. Your money,
+//    your call.
+// ═══════════════════════════════════════════════════════════════════════════════
+
+strategy(
+     title                   = "Percoco $50 Morning Model - 15m FVG / 1m CHoCH",
+     shorttitle              = "P50 MORNING",
+     overlay                 = true,
+     initial_capital         = 250,
+     currency                = currency.USD,
+     default_qty_type        = strategy.fixed,
+     default_qty_value       = 1,
+     pyramiding              = 0,
+     calc_on_every_tick      = false,
+     process_orders_on_close = true,
+     close_entries_rule      = "ANY",
+     commission_type         = strategy.commission.percent,
+     commission_value        = 0.0,
+     slippage                = 1)
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  ① SESSION  -  "wait for the 9:30 a.m. New York open"
+// ─────────────────────────────────────────────────────────────────────────────
+G_SES = "① Morning session"
+
+i_useSession = input.bool(true, "Only hunt setups inside the session", group = G_SES)
+i_session    = input.session("0930-1130", "Session window", group = G_SES,
+     tooltip = "The video waits for the 9:30 NY open and trades the morning. " +
+               "0930-1130 covers the opening two hours.")
+i_tz         = input.string("America/New_York", "Session timezone", group = G_SES,
+     options = ["America/New_York", "America/Chicago", "America/Los_Angeles",
+                "Europe/London", "Europe/Berlin", "Asia/Dubai", "Asia/Kolkata",
+                "Asia/Shanghai", "Asia/Tokyo", "Australia/Sydney", "UTC"])
+i_flatOnEnd  = input.bool(true, "Flatten any open trade at session end", group = G_SES)
+i_skipDays   = input.string("None", "Skip weekday", group = G_SES,
+     options = ["None", "Monday", "Friday"])
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  ② STEP 1  -  15-minute fair value gap (higher-timeframe context)
+// ─────────────────────────────────────────────────────────────────────────────
+G_HTF = "② Step 1 - 15m fair value gap"
+
+i_useHtf       = input.bool(true, "Require a 15m FVG response", group = G_HTF,
+     tooltip = "Step 1 of the model. Turn off to trade the 1m CHoCH + FVG alone.")
+i_htfTf        = input.timeframe("15", "Context timeframe", group = G_HTF)
+i_htfMinAtr    = input.float(0.15, "Minimum 15m gap size (× 15m ATR)", minval = 0.0,
+     step = 0.05, group = G_HTF, tooltip = "Filters out cosmetic gaps.")
+i_htfTapBars   = input.int(60, "Price must have tapped the gap within N bars", minval = 1,
+     maxval = 500, group = G_HTF,
+     tooltip = "'Price pulls into one of these fair value gaps and then starts to " +
+               "have a response.' N is counted in chart (1m) bars.")
+i_htfExpiry    = input.int(96, "Discard a 15m gap after N 15m bars", minval = 1, group = G_HTF)
+i_htfMax       = input.int(12, "Max tracked 15m gaps per side", minval = 1, maxval = 50, group = G_HTF)
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  ③ STEP 2  -  1-minute change of character
+// ─────────────────────────────────────────────────────────────────────────────
+G_CHOCH = "③ Step 2 - change of character"
+
+i_pivotLen    = input.int(3, "Swing pivot strength", minval = 1, maxval = 25, group = G_CHOCH,
+     tooltip = "Bars either side of a swing high/low. 3 suits a 1m chart.")
+i_reqCounter  = input.bool(true, "Require the prior structure to be opposing", group = G_CHOCH,
+     tooltip = "A bullish CHoCH must break out of a lower-high structure " +
+               "('price is trending down this way and then all of a sudden a new high').")
+i_chochLife   = input.int(45, "CHoCH leg stays valid for N bars", minval = 5, group = G_CHOCH)
+i_allowLong   = input.bool(true, "Allow longs", group = G_CHOCH)
+i_allowShort  = input.bool(true, "Allow shorts", group = G_CHOCH)
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  ④ STEPS 3 & 4  -  1m fair value gap inside the leg, priced 0.5-0.618
+// ─────────────────────────────────────────────────────────────────────────────
+G_LTF = "④ Steps 3-4 - 1m FVG + Fibonacci"
+
+i_ltfMinAtr  = input.float(0.10, "Minimum 1m gap size (× 1m ATR)", minval = 0.0, step = 0.05,
+     group = G_LTF)
+i_atrLen     = input.int(14, "ATR length", minval = 2, group = G_LTF)
+i_useFib     = input.bool(true, "Require the gap midpoint inside the fib zone", group = G_LTF)
+i_fibShallow = input.float(0.500, "Fib zone - shallow edge", minval = 0.0, maxval = 1.0,
+     step = 0.001, group = G_LTF)
+i_fibDeep    = input.float(0.618, "Fib zone - deep edge", minval = 0.0, maxval = 1.0,
+     step = 0.001, group = G_LTF,
+     tooltip = "'Make sure this gap is somewhere between the 50 and the 61.8.'")
+i_fibTol     = input.float(0.0, "Zone tolerance (× leg range)", minval = 0.0, maxval = 0.2,
+     step = 0.005, group = G_LTF)
+i_ltfExpiry  = input.int(45, "Discard a 1m gap after N bars", minval = 1, group = G_LTF)
+i_ltfMax     = input.int(20, "Max tracked 1m gaps per side", minval = 1, maxval = 60, group = G_LTF)
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  ⑤ STEP 5  -  entry, stop, target
+// ─────────────────────────────────────────────────────────────────────────────
+G_EXE = "⑤ Step 5 - entry / stop / target"
+
+i_entryOffT = input.int(0, "Entry offset from midpoint (ticks)", minval = 0, maxval = 500,
+     group = G_EXE,
+     tooltip = "0 = the exact midpoint. The video says 'just above the midpoint' for " +
+               "a long, which a few ticks of offset reproduces.")
+i_stopMode  = input.string("FVG-producing sequence", "Stop loss reference", group = G_EXE,
+     options = ["FVG-producing sequence", "Gap far edge", "CHoCH leg origin"],
+     tooltip = "'Place my -1 unit of R outside of this fair value gap producing sequence.'")
+i_stopBufT  = input.int(2, "Stop buffer (ticks beyond the reference)", minval = 0, maxval = 5000,
+     group = G_EXE)
+i_targetR   = input.float(4.0, "Target (risk factors)", minval = 0.5, maxval = 50, step = 0.1,
+     group = G_EXE, tooltip = "The video targets 3-4R and walks through a 1:4.")
+i_useBE     = input.bool(false, "Move stop to breakeven at R", group = G_EXE,
+     tooltip = "Not in the video's simplified model. Off keeps the 1:4 statistics honest.")
+i_beAtR     = input.float(2.0, "…breakeven trigger (R)", minval = 0.1, step = 0.1, group = G_EXE)
+i_timeStop  = input.int(0, "Time stop - close after N bars (0 = off)", minval = 0, group = G_EXE)
+i_cancelBars = input.int(20, "Cancel an unfilled limit after N bars", minval = 1, group = G_EXE)
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  ⑥ RISK  -  R factors and percentage scaling
+// ─────────────────────────────────────────────────────────────────────────────
+G_RISK = "⑥ Risk - percentage scaling"
+
+i_riskMode  = input.string("Percent of equity", "Risk per trade", group = G_RISK,
+     options = ["Percent of equity", "Fixed cash"])
+i_riskPct   = input.float(10.0, "Risk % of current balance", minval = 0.05, maxval = 50,
+     step = 0.05, group = G_RISK,
+     tooltip = "PERCENTAGE SCALING. The video's small-account plan is 10%; it also " +
+               "notes 1-2% is the standard. 10% on a $50 account is $5 a trade and a " +
+               "normal 5-trade losing streak takes it to ~$30. Set this deliberately.")
+i_riskCash  = input.float(25.0, "…or fixed cash risk", minval = 0.01, step = 0.01, group = G_RISK)
+i_useTiers  = input.bool(true, "Step risk down as the account grows", group = G_RISK,
+     tooltip = "'Once I make it to $1,000, now I'm going to use 5% of the account.'")
+i_tier1At   = input.float(1000, "Tier 1 - balance ≥", minval = 0, group = G_RISK)
+i_tier1Pct  = input.float(5.0, "Tier 1 - risk %", minval = 0.05, step = 0.05, group = G_RISK)
+i_tier2At   = input.float(10000, "Tier 2 - balance ≥", minval = 0, group = G_RISK)
+i_tier2Pct  = input.float(2.0, "Tier 2 - risk %", minval = 0.05, step = 0.05, group = G_RISK)
+
+i_qtyStep   = input.float(0.01, "Position size step (rounds down)", minval = 0.000001,
+     step = 0.01, group = G_RISK,
+     tooltip = "1 for futures contracts or whole shares. 0.01 for gold/crypto/forex " +
+               "on a broker that allows micro size.")
+i_minQty    = input.float(0.01, "Minimum position size", minval = 0.000001, step = 0.01, group = G_RISK)
+i_skipSmall = input.bool(true, "Skip the trade if minimum size exceeds the risk budget",
+     group = G_RISK,
+     tooltip = "Keep this ON for a small account. Off will silently over-risk you.")
+
+i_maxTrades = input.int(3, "Max trades per day", minval = 1, maxval = 25, group = G_RISK)
+i_dayStopR  = input.float(3.0, "Stop for the day after losing N R (0 = off)", minval = 0,
+     step = 0.5, group = G_RISK)
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  ⑦ ALERTS & DISPLAY
+// ─────────────────────────────────────────────────────────────────────────────
+G_ALERT = "⑦ Alerts"
+i_alerts   = input.bool(true, "Emit JSON webhook alerts", group = G_ALERT)
+i_symOvr   = input.string("", "Symbol override in the payload", group = G_ALERT)
+
+G_UI = "⑧ Display"
+i_showHtf   = input.bool(true,  "15m gaps",           group = G_UI, inline = "a")
+i_showLtf   = input.bool(true,  "1m gaps",            group = G_UI, inline = "a")
+i_showFib   = input.bool(true,  "Fib zone",           group = G_UI, inline = "b")
+i_showLvls  = input.bool(true,  "Entry / stop / TP",  group = G_UI, inline = "b")
+i_showSess  = input.bool(true,  "Session shading",    group = G_UI, inline = "c")
+i_showTable = input.bool(true,  "R dashboard",        group = G_UI, inline = "c")
+
+
+// ═══════════════════════════════════════════════════════════════════════════════
+//  HELPERS
+// ═══════════════════════════════════════════════════════════════════════════════
+tick = syminfo.mintick
+pv   = syminfo.pointvalue == 0 ? 1.0 : syminfo.pointvalue
+atr  = ta.atr(i_atrLen)
+
+f_num(x) => na(x) ? "null" : str.tostring(x, format.mintick)
+
+f_payload(action, side, qty, px, sl, tp, rr) =>
+    sym = i_symOvr == "" ? syminfo.ticker : i_symOvr
+    '{"strategy":"P50_MORNING","action":"' + action +
+     '","side":"'    + side +
+     '","symbol":"'  + sym +
+     '","qty":'      + str.tostring(qty) +
+     ',"price":'     + f_num(px) +
+     ',"sl":'        + f_num(sl) +
+     ',"tp":'        + f_num(tp) +
+     ',"rr":'        + str.tostring(rr) +
+     ',"time":"'     + str.format_time(time_close, "yyyy-MM-dd HH:mm:ss", "UTC") + '"}'
+
+
+// ═══════════════════════════════════════════════════════════════════════════════
+//  SESSION STATE
+// ═══════════════════════════════════════════════════════════════════════════════
+inSession  = not i_useSession or not na(time(timeframe.period, i_session, i_tz))
+sessEnded  = i_useSession and inSession[1] and not inSession
+
+dowSkip = i_skipDays == "Monday" and dayofweek == dayofweek.monday
+dowSkip := dowSkip or (i_skipDays == "Friday" and dayofweek == dayofweek.friday)
+
+newDay = time("D") != time("D")[1]
+
+
+// ═══════════════════════════════════════════════════════════════════════════════
+//  STEP 1  -  15-MINUTE FAIR VALUE GAPS
+//  A gap needs three consecutive candles. Requesting [1] and [3] means we only
+//  ever read CLOSED higher-timeframe bars, so nothing repaints.
+// ═══════════════════════════════════════════════════════════════════════════════
+[hH1, hL1, hH3, hL3, hAtr, hT1] = request.security(syminfo.tickerid, i_htfTf,
+     [high[1], low[1], high[3], low[3], ta.atr(14)[1], time[1]],
+     barmerge.gaps_off, barmerge.lookahead_off)
+
+htfClosed = not na(hT1) and hT1 != nz(hT1[1], -1)
+hMin      = nz(hAtr, 0) * i_htfMinAtr
+// how many chart bars make up one context bar - used to place the 15m boxes
+htfBars   = int(math.max(1, math.round(timeframe.in_seconds(i_htfTf) / timeframe.in_seconds(timeframe.period))))
+htfLeft   = int(math.max(0, bar_index - 3 * htfBars))
+
+// bullish 15m gap: low of candle 3 sits above high of candle 1
+newHtfBull = htfClosed and not na(hL1) and not na(hH3) and hL1 > hH3 and (hL1 - hH3) >= hMin
+// bearish 15m gap: high of candle 3 sits below low of candle 1
+newHtfBear = htfClosed and not na(hH1) and not na(hL3) and hH1 < hL3 and (hL3 - hH1) >= hMin
+
+var array<float> HBT = array.new<float>()   // 15m bull gap top
+var array<float> HBB = array.new<float>()   // 15m bull gap bottom
+var array<int>   HBN = array.new<int>()     // 15m bar counter at creation
+var array<box>   HBX = array.new<box>()
+var array<float> HST = array.new<float>()   // 15m bear gap top
+var array<float> HSB = array.new<float>()
+var array<int>   HSN = array.new<int>()
+var array<box>   HSX = array.new<box>()
+
+var int htfBarNo = 0
+if htfClosed
+    htfBarNo += 1
+
+if newHtfBull
+    array.push(HBT, hL1)
+    array.push(HBB, hH3)
+    array.push(HBN, htfBarNo)
+    array.push(HBX, i_showHtf ? box.new(htfLeft, hL1, bar_index + 1, hH3,
+         border_color = color.new(color.teal, 40), bgcolor = color.new(color.teal, 88),
+         border_width = 1) : box(na))
+    if array.size(HBT) > i_htfMax
+        b = array.shift(HBX)
+        if not na(b)
+            box.delete(b)
+        array.shift(HBT)
+        array.shift(HBB)
+        array.shift(HBN)
+
+if newHtfBear
+    array.push(HST, hL3)
+    array.push(HSB, hH1)
+    array.push(HSN, htfBarNo)
+    array.push(HSX, i_showHtf ? box.new(htfLeft, hL3, bar_index + 1, hH1,
+         border_color = color.new(color.maroon, 40), bgcolor = color.new(color.maroon, 88),
+         border_width = 1) : box(na))
+    if array.size(HST) > i_htfMax
+        b = array.shift(HSX)
+        if not na(b)
+            box.delete(b)
+        array.shift(HST)
+        array.shift(HSB)
+        array.shift(HSN)
+
+// Is price currently trading inside a live 15m bull gap? (the "pull into" leg)
+bool inHtfBull = false
+if array.size(HBT) > 0
+    for i = array.size(HBT) - 1 to 0
+        top = array.get(HBT, i)
+        bot = array.get(HBB, i)
+        if close < bot or (htfBarNo - array.get(HBN, i)) > i_htfExpiry
+            b = array.get(HBX, i)
+            if not na(b)
+                box.delete(b)
+            array.remove(HBT, i)
+            array.remove(HBB, i)
+            array.remove(HBN, i)
+            array.remove(HBX, i)
+        else
+            b = array.get(HBX, i)
+            if not na(b)
+                box.set_right(b, bar_index + 1)
+            if low <= top and high >= bot
+                inHtfBull := true
+
+bool inHtfBear = false
+if array.size(HST) > 0
+    for i = array.size(HST) - 1 to 0
+        top = array.get(HST, i)
+        bot = array.get(HSB, i)
+        if close > top or (htfBarNo - array.get(HSN, i)) > i_htfExpiry
+            b = array.get(HSX, i)
+            if not na(b)
+                box.delete(b)
+            array.remove(HST, i)
+            array.remove(HSB, i)
+            array.remove(HSN, i)
+            array.remove(HSX, i)
+        else
+            b = array.get(HSX, i)
+            if not na(b)
+                box.set_right(b, bar_index + 1)
+            if low <= top and high >= bot
+                inHtfBear := true
+
+htfBullOk = not i_useHtf or nz(ta.barssince(inHtfBull), 999999) <= i_htfTapBars
+htfBearOk = not i_useHtf or nz(ta.barssince(inHtfBear), 999999) <= i_htfTapBars
+
+
+// ═══════════════════════════════════════════════════════════════════════════════
+//  STEP 2  -  1-MINUTE CHANGE OF CHARACTER
+// ═══════════════════════════════════════════════════════════════════════════════
+ph = ta.pivothigh(high, i_pivotLen, i_pivotLen)
+pl = ta.pivotlow(low,  i_pivotLen, i_pivotLen)
+
+var float swH1 = na
+var float swH2 = na
+var int   swH1Bar = na
+var float swL1 = na
+var float swL2 = na
+var int   swL1Bar = na
+
+if not na(ph)
+    swH2 := swH1
+    swH1 := ph
+    swH1Bar := bar_index - i_pivotLen
+if not na(pl)
+    swL2 := swL1
+    swL1 := pl
+    swL1Bar := bar_index - i_pivotLen
+
+// "price is trending down this way and then all of a sudden we have a new high
+//  that's higher than all of these other points"
+priorLowerHigh  = not i_reqCounter or (not na(swH2) and swH1 < swH2)
+priorHigherLow  = not i_reqCounter or (not na(swL2) and swL1 > swL2)
+
+chochUp = not na(swH1) and close > swH1 and close[1] <= swH1 and priorLowerHigh
+chochDn = not na(swL1) and close < swL1 and close[1] >= swL1 and priorHigherLow
+
+var int   legDir   = 0        // +1 bullish leg, -1 bearish leg, 0 none
+var int   legStart = na       // bar_index where the move began
+var int   legBar   = na       // bar_index of the CHoCH break
+var float legLow   = na
+var float legHigh  = na
+
+if chochUp and i_allowLong
+    legDir   := 1
+    legStart := nz(swL1Bar, bar_index)
+    legBar   := bar_index
+    legLow   := nz(swL1, low)
+    legHigh  := high
+else if chochDn and i_allowShort
+    legDir   := -1
+    legStart := nz(swH1Bar, bar_index)
+    legBar   := bar_index
+    legHigh  := nz(swH1, high)
+    legLow   := low
+
+// the leg extends while it runs
+if legDir == 1
+    legHigh := math.max(nz(legHigh, high), high)
+    if close < legLow or (bar_index - legBar) > i_chochLife
+        legDir := 0
+if legDir == -1
+    legLow := math.min(nz(legLow, low), low)
+    if close > legHigh or (bar_index - legBar) > i_chochLife
+        legDir := 0
+
+legRange = nz(legHigh, 0) - nz(legLow, 0)
+
+// STEP 4 - Fibonacci retracement of that move
+tolAbs   = legRange * i_fibTol
+fShallow = math.min(i_fibShallow, i_fibDeep)      // 0.5   - nearest to the extreme
+fDeep    = math.max(i_fibShallow, i_fibDeep)      // 0.618 - deepest allowed
+fibUpHi  = legDir ==  1 ? legHigh - fShallow * legRange + tolAbs : na
+fibUpLo  = legDir ==  1 ? legHigh - fDeep    * legRange - tolAbs : na
+fibDnLo  = legDir == -1 ? legLow  + fShallow * legRange - tolAbs : na
+fibDnHi  = legDir == -1 ? legLow  + fDeep    * legRange + tolAbs : na
+
+
+// ═══════════════════════════════════════════════════════════════════════════════
+//  STEP 3  -  1-MINUTE FAIR VALUE GAPS
+//  Stored with the high/low of the whole 3-candle sequence so the stop can go
+//  "outside the fair value gap producing sequence".
+// ═══════════════════════════════════════════════════════════════════════════════
+lMin     = atr * i_ltfMinAtr
+bullGapN = low > high[2] and (low - high[2]) >= lMin
+bearGapN = high < low[2] and (low[2] - high) >= lMin
+
+var array<float> LBT = array.new<float>()   // bull gap top
+var array<float> LBB = array.new<float>()   // bull gap bottom
+var array<float> LBS = array.new<float>()   // sequence low
+var array<int>   LBN = array.new<int>()     // bar_index of the third candle
+var array<box>   LBX = array.new<box>()
+var array<float> LST = array.new<float>()   // bear gap top
+var array<float> LSB = array.new<float>()
+var array<float> LSS = array.new<float>()   // sequence high
+var array<int>   LSN = array.new<int>()
+var array<box>   LSX = array.new<box>()
+
+if bullGapN
+    array.push(LBT, low)
+    array.push(LBB, high[2])
+    array.push(LBS, math.min(math.min(low, low[1]), low[2]))
+    array.push(LBN, bar_index)
+    array.push(LBX, i_showLtf ? box.new(bar_index - 2, low, bar_index + 1, high[2],
+         border_color = color.new(color.green, 55), bgcolor = color.new(color.green, 82),
+         border_width = 1) : box(na))
+    if array.size(LBT) > i_ltfMax
+        b = array.shift(LBX)
+        if not na(b)
+            box.delete(b)
+        array.shift(LBT)
+        array.shift(LBB)
+        array.shift(LBS)
+        array.shift(LBN)
+
+if bearGapN
+    array.push(LST, low[2])
+    array.push(LSB, high)
+    array.push(LSS, math.max(math.max(high, high[1]), high[2]))
+    array.push(LSN, bar_index)
+    array.push(LSX, i_showLtf ? box.new(bar_index - 2, low[2], bar_index + 1, high,
+         border_color = color.new(color.red, 55), bgcolor = color.new(color.red, 82),
+         border_width = 1) : box(na))
+    if array.size(LST) > i_ltfMax
+        b = array.shift(LSX)
+        if not na(b)
+            box.delete(b)
+        array.shift(LST)
+        array.shift(LSB)
+        array.shift(LSS)
+        array.shift(LSN)
+
+// prune violated / expired 1m gaps
+if array.size(LBT) > 0
+    for i = array.size(LBT) - 1 to 0
+        if close < array.get(LBB, i) or (bar_index - array.get(LBN, i)) > i_ltfExpiry
+            b = array.get(LBX, i)
+            if not na(b)
+                box.delete(b)
+            array.remove(LBT, i)
+            array.remove(LBB, i)
+            array.remove(LBS, i)
+            array.remove(LBN, i)
+            array.remove(LBX, i)
+        else
+            b = array.get(LBX, i)
+            if not na(b)
+                box.set_right(b, bar_index + 1)
+
+if array.size(LST) > 0
+    for i = array.size(LST) - 1 to 0
+        if close > array.get(LST, i) or (bar_index - array.get(LSN, i)) > i_ltfExpiry
+            b = array.get(LSX, i)
+            if not na(b)
+                box.delete(b)
+            array.remove(LST, i)
+            array.remove(LSB, i)
+            array.remove(LSS, i)
+            array.remove(LSN, i)
+            array.remove(LSX, i)
+        else
+            b = array.get(LSX, i)
+            if not na(b)
+                box.set_right(b, bar_index + 1)
+
+
+// ═══════════════════════════════════════════════════════════════════════════════
+//  RISK  -  percentage scaling and the R budget
+// ═══════════════════════════════════════════════════════════════════════════════
+eq = strategy.equity
+
+pctNow = i_riskPct
+if i_useTiers
+    if eq >= i_tier2At
+        pctNow := i_tier2Pct
+    else if eq >= i_tier1At
+        pctNow := i_tier1Pct
+
+riskCash = i_riskMode == "Fixed cash" ? i_riskCash : eq * pctNow / 100.0
+
+var int   tradesToday = 0
+var float rToday      = 0.0
+var float rTotal      = 0.0
+var int   nWin        = 0
+var int   nLoss       = 0
+
+if newDay
+    tradesToday := 0
+    rToday      := 0.0
+
+dayHalted = i_dayStopR > 0 and rToday <= -i_dayStopR
+canHunt   = inSession and not dowSkip and not dayHalted and tradesToday < i_maxTrades
+
+// size = desired $ risk / stop distance / point value, rounded DOWN to a tradeable step
+f_qty(stopDist) =>
+    raw     = stopDist <= 0 ? 0.0 : riskCash / (stopDist * pv)
+    stepped = math.floor(raw / i_qtyStep) * i_qtyStep
+    stepped < i_minQty ? (i_skipSmall ? 0.0 : i_minQty) : stepped
+
+
+// ═══════════════════════════════════════════════════════════════════════════════
+//  SETUP SELECTION  -  first unfilled 1m gap inside the leg, priced in the fib zone
+// ═══════════════════════════════════════════════════════════════════════════════
+float selTop = na
+float selBot = na
+float selSeq = na
+int   selDir = 0
+
+longCtx  = legDir ==  1 and i_allowLong  and htfBullOk
+shortCtx = legDir == -1 and i_allowShort and htfBearOk
+
+if longCtx and array.size(LBT) > 0
+    for i = array.size(LBT) - 1 to 0
+        if array.get(LBN, i) >= nz(legStart, 0)
+            midL = (array.get(LBT, i) + array.get(LBB, i)) / 2.0
+            if not i_useFib or (midL <= fibUpHi and midL >= fibUpLo)
+                selTop := array.get(LBT, i)
+                selBot := array.get(LBB, i)
+                selSeq := array.get(LBS, i)
+                selDir := 1
+                break
+
+if selDir == 0 and shortCtx and array.size(LST) > 0
+    for i = array.size(LST) - 1 to 0
+        if array.get(LSN, i) >= nz(legStart, 0)
+            midS = (array.get(LST, i) + array.get(LSB, i)) / 2.0
+            if not i_useFib or (midS >= fibDnLo and midS <= fibDnHi)
+                selTop := array.get(LST, i)
+                selBot := array.get(LSB, i)
+                selSeq := array.get(LSS, i)
+                selDir := -1
+                break
+
+// entry / stop / target for the selected setup
+float plEntry = na
+float plStop  = na
+float plTp    = na
+float plQty   = 0.0
+
+if selDir != 0
+    selMid = (selTop + selBot) / 2.0
+    plEntry := selDir == 1 ? selMid + i_entryOffT * tick : selMid - i_entryOffT * tick
+
+    ref = switch i_stopMode
+        "Gap far edge"         => selDir == 1 ? selBot : selTop
+        "CHoCH leg origin"     => selDir == 1 ? nz(legLow, selSeq) : nz(legHigh, selSeq)
+        => selSeq                                       // FVG-producing sequence
+    plStop := selDir == 1 ? ref - i_stopBufT * tick : ref + i_stopBufT * tick
+
+    // the stop must sit on the correct side of the entry
+    plStop := selDir == 1 ? math.min(plStop, plEntry - tick) : math.max(plStop, plEntry + tick)
+
+    rUnit  = math.abs(plEntry - plStop)
+    plTp  := selDir == 1 ? plEntry + i_targetR * rUnit : plEntry - i_targetR * rUnit
+    plQty := f_qty(rUnit)
+
+
+// ═══════════════════════════════════════════════════════════════════════════════
+//  ORDERS
+// ═══════════════════════════════════════════════════════════════════════════════
+var float pStop   = na
+var float pTp     = na
+var float pEntry  = na
+var float pRisk   = na          // cash risked on the live trade
+var float pRUnit  = na          // price distance of 1R
+var int   pBar    = na
+var bool  pBEDone = false
+var int   pDir    = 0
+
+var float armStop  = na
+var float armLevel = na     // the level the resting limit is currently sitting at
+var int   armBar   = na     // bar the CURRENT level was first armed on
+
+flat = strategy.position_size == 0
+
+if flat
+    // The resting limit is cancelled and re-issued every bar so its level and its
+    // filters stay current. armBar tracks the age of the LEVEL, not of the order,
+    // so "cancel an unfilled limit after N bars" still means what it says.
+    strategy.cancel("LONG")
+    strategy.cancel("SHORT")
+
+    levelChanged = selDir == 0 or na(armLevel) or math.abs(plEntry - armLevel) > tick / 2
+    if levelChanged
+        armLevel := selDir != 0 ? plEntry : na
+        armBar   := selDir != 0 ? bar_index : na
+
+    aged  = not na(armBar) and (bar_index - armBar) > i_cancelBars
+    valid = selDir != 0 and canHunt and plQty > 0 and not na(plEntry) and not aged
+    // a pullback entry: price must still be on the far side of the limit
+    pullback = selDir == 1 ? close > plEntry : close < plEntry
+
+    if valid and pullback
+        armStop := plStop
+        if selDir == 1
+            strategy.entry("LONG", strategy.long, qty = plQty, limit = plEntry,
+                 comment = "FVG mid " + str.tostring(i_targetR, "#.#") + "R")
+        else
+            strategy.entry("SHORT", strategy.short, qty = plQty, limit = plEntry,
+                 comment = "FVG mid " + str.tostring(i_targetR, "#.#") + "R")
+
+// ── fill detection ───────────────────────────────────────────────────────────
+justFilled = strategy.position_size != 0 and strategy.position_size[1] == 0
+if justFilled
+    pDir    := strategy.position_size > 0 ? 1 : -1
+    pEntry  := strategy.position_avg_price
+    pStop   := armStop
+    pRUnit  := math.max(math.abs(pEntry - nz(pStop, pEntry)), tick)
+    // recompute the target from the ACTUAL fill so the R multiple stays true
+    pTp     := pDir == 1 ? pEntry + i_targetR * pRUnit : pEntry - i_targetR * pRUnit
+    pRisk   := pRUnit * math.abs(strategy.position_size) * pv
+    pBar    := bar_index
+    pBEDone := false
+    tradesToday += 1
+    if i_alerts
+        alert(f_payload("entry", pDir == 1 ? "long" : "short",
+             math.abs(strategy.position_size), pEntry, pStop, pTp, i_targetR),
+             alert.freq_once_per_bar)
+
+// ── open-trade management ────────────────────────────────────────────────────
+if strategy.position_size != 0
+    if i_useBE and not pBEDone
+        hitBE = pDir == 1 ? high >= pEntry + i_beAtR * pRUnit : low <= pEntry - i_beAtR * pRUnit
+        if hitBE
+            pBEDone := true
+            pStop := pDir == 1 ? math.max(pStop, pEntry) : math.min(pStop, pEntry)
+
+    if na(pStop)
+        // should be unreachable; refuse to hold an unprotected position
+        strategy.close_all(comment = "No stop")
+    else if i_timeStop > 0 and (bar_index - pBar) >= i_timeStop
+        strategy.close_all(comment = "Time stop")
+    else if sessEnded and i_flatOnEnd
+        strategy.close_all(comment = "Session end")
+    else
+        strategy.exit("X", from_entry = pDir == 1 ? "LONG" : "SHORT",
+             limit = pTp, stop = pStop, comment_profit = "Target", comment_loss = "-1R")
+
+// ── closed-trade R accounting ────────────────────────────────────────────────
+if strategy.closedtrades > nz(strategy.closedtrades[1], 0)
+    for k = nz(strategy.closedtrades[1], 0) to strategy.closedtrades - 1
+        p = strategy.closedtrades.profit(k)
+        r = nz(pRisk, 0) > 0 ? p / pRisk : 0.0
+        rToday += r
+        rTotal += r
+        if p > 0
+            nWin += 1
+        else
+            nLoss += 1
+        if i_alerts
+            alert(f_payload("exit", pDir == 1 ? "long" : "short", 0.0, close, float(na), float(na), r),
+                 alert.freq_once_per_bar)
+    pDir := 0
+
+
+// ═══════════════════════════════════════════════════════════════════════════════
+//  DISPLAY
+// ═══════════════════════════════════════════════════════════════════════════════
+bgcolor(i_showSess and i_useSession and inSession ? color.new(color.blue, 95) : na, title = "Session")
+
+plotshape(not na(ph) ? ph : na, "Swing high", shape.triangledown, location.absolute,
+     color.new(color.red, 55), offset = -i_pivotLen, size = size.tiny)
+plotshape(not na(pl) ? pl : na, "Swing low", shape.triangleup, location.absolute,
+     color.new(color.green, 55), offset = -i_pivotLen, size = size.tiny)
+
+plotshape(chochUp and i_allowLong,  "CHoCH up",   shape.labelup,   location.belowbar,
+     color.new(color.teal, 20), text = "CHoCH", textcolor = color.white, size = size.tiny)
+plotshape(chochDn and i_allowShort, "CHoCH down", shape.labeldown, location.abovebar,
+     color.new(color.maroon, 20), text = "CHoCH", textcolor = color.white, size = size.tiny)
+
+showFibUp = i_showFib and legDir == 1
+showFibDn = i_showFib and legDir == -1
+p1 = plot(showFibUp ? fibUpHi : showFibDn ? fibDnHi : na, "Fib 0.5",   color.new(color.orange, 45), 1, plot.style_linebr)
+p2 = plot(showFibUp ? fibUpLo : showFibDn ? fibDnLo : na, "Fib 0.618", color.new(color.orange, 45), 1, plot.style_linebr)
+fill(p1, p2, color.new(color.orange, 90), title = "Fib zone")
+
+inPos = strategy.position_size != 0
+plot(i_showLvls and inPos ? pEntry : na, "Entry", color.new(color.blue,  0), 1, plot.style_linebr)
+plot(i_showLvls and inPos ? pStop  : na, "Stop",  color.new(color.red,   0), 1, plot.style_linebr)
+plot(i_showLvls and inPos ? pTp    : na, "Target", color.new(color.green, 0), 1, plot.style_linebr)
+
+plot(i_showLvls and flat and selDir != 0 ? plEntry : na, "Pending entry",
+     color.new(color.blue, 45), 1, plot.style_circles)
+
+// ── R dashboard ──────────────────────────────────────────────────────────────
+var table dash = table.new(position.top_right, 2, 11,
+     bgcolor = color.new(color.black, 20), border_color = color.new(color.gray, 60),
+     border_width = 1, frame_color = color.new(color.gray, 40), frame_width = 1)
+
+f_row(r, k, v, c) =>
+    table.cell(dash, 0, r, k, text_color = color.new(color.silver, 0), text_size = size.tiny,
+         text_halign = text.align_left)
+    table.cell(dash, 1, r, v, text_color = c, text_size = size.tiny, text_halign = text.align_right)
+
+if i_showTable and barstate.islast
+    nTr    = nWin + nLoss
+    wr     = nTr > 0 ? 100.0 * nWin / nTr : 0.0
+    // break-even win rate for the configured R:R - the video's profitability table
+    beWr   = 100.0 / (1.0 + i_targetR)
+    stage  = dayHalted ? "DAY STOPPED" : not inSession ? "OUT OF SESSION" :
+             inPos ? "IN TRADE" : selDir != 0 ? "SETUP ARMED" :
+             legDir != 0 ? "CHoCH - waiting for FVG" : "waiting for CHoCH"
+
+    table.cell(dash, 0, 0, "P50 MORNING MODEL", text_color = color.white,
+         text_size = size.tiny, text_halign = text.align_left)
+    table.cell(dash, 1, 0, str.tostring(i_targetR, "#.#") + "R target", text_color = color.white,
+         text_size = size.tiny, text_halign = text.align_right)
+
+    f_row(1, "state",        stage, color.new(color.aqua, 0))
+    f_row(2, "15m context",  htfBullOk and legDir == 1 ? "bull gap ✓" :
+                             htfBearOk and legDir == -1 ? "bear gap ✓" :
+                             i_useHtf ? "none" : "off",
+                             color.new(color.silver, 0))
+    f_row(3, "balance",      "$" + str.tostring(eq, "#.##"), color.new(color.white, 0))
+    f_row(4, "risk / trade", "$" + str.tostring(riskCash, "#.##") +
+                             (i_riskMode == "Fixed cash" ? "" : "  (" + str.tostring(pctNow, "#.#") + "%)"),
+                             color.new(color.yellow, 0))
+    f_row(5, "size",         plQty > 0 ? str.tostring(plQty, "#.####") :
+                             inPos ? str.tostring(math.abs(strategy.position_size), "#.####") : "-",
+                             color.new(color.silver, 0))
+    f_row(6, "trades today", str.tostring(tradesToday) + " / " + str.tostring(i_maxTrades),
+                             color.new(color.silver, 0))
+    f_row(7, "R today",      str.tostring(rToday, "#.##") + "R",
+                             rToday >= 0 ? color.new(color.lime, 0) : color.new(color.red, 0))
+    f_row(8, "R total",      str.tostring(rTotal, "#.##") + "R",
+                             rTotal >= 0 ? color.new(color.lime, 0) : color.new(color.red, 0))
+    f_row(9, "win rate",     nTr > 0 ? str.tostring(wr, "#.#") + "%  (" + str.tostring(nWin) +
+                             "/" + str.tostring(nTr) + ")" : "-",
+                             wr >= beWr ? color.new(color.lime, 0) : color.new(color.orange, 0))
+    f_row(10, "break-even WR", str.tostring(beWr, "#.#") + "%", color.new(color.silver, 0))
