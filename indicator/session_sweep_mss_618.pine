@@ -1,502 +1,332 @@
 //@version=6
-// ═══════════════════════════════════════════════════════════════════════════════
-//  SESSION SWEEP → MSS → 0.618   ·   5-minute alert tool
-// ═══════════════════════════════════════════════════════════════════════════════
-//
-//  An ALERT tool, not an auto-trader. It watches the three mechanical steps and
-//  tells you when a setup is ready, with the exact entry, stop and target, so you
-//  can place the order yourself.
-//
-//  STEP 1 - SESSION SWEEP
-//    "You're literally going to wait for the box to be swept on one side ... we're
-//     just waiting for whichever side of the box of the previous session gets swept
-//     first. And that is a liquidity sweep of previous session."
-//    Previous session HIGH swept  → hunt SHORTS
-//    Previous session LOW  swept  → hunt LONGS
-//
-//  STEP 2 - MARKET STRUCTURE SHIFT
-//    "The high has been broken to swap from a bearish market structure to a bullish
-//     market structure." Marked off fractals, and it must be a BODY CLOSE:
-//    "we want a body close ... we had a low here, but it didn't body close. So we
-//     waited for this low to body close."
-//
-//  STEP 3 - FIBONACCI
-//    "Draw your fib on the leg that's created the shift ... You only need the 0.618."
-//    Short: drag leg high → leg low, enter 0.618, stop at the highs.
-//    Long:  drag leg low  → leg high, enter 0.618, stop at the lows.
-//    "Take profit at a 2:1 ... this is why you don't need to chase more than a two
-//     to one."
-//
-//  ── SETUP ────────────────────────────────────────────────────────────────────
-//  5-minute chart. Alert condition = this indicator, trigger = "Any alert() function
-//  call", frequency = "Once Per Bar". See docs/ALERTS.md.
-//
-//  Educational tool. It reports what the rules say; it does not know whether the
-//  rules make money on your pair, in your spread, at your fill quality.
-// ═══════════════════════════════════════════════════════════════════════════════
+// =============================================================================
+//  SESSION SWEEP -> MSS -> 0.618        alert tool for manual execution
+//  Put this on a 5 MINUTE chart.
+//  Alert: condition = this indicator, trigger = "Any alert() function call",
+//         frequency = "Once Per Bar".
+// =============================================================================
+indicator("Session Sweep MSS 618", "SWEEP MSS 618", overlay = true, max_boxes_count = 200, max_labels_count = 200)
 
-indicator("Session Sweep → MSS → 0.618", "SWEEP·MSS·618", overlay = true,
-     max_boxes_count = 500, max_lines_count = 500, max_labels_count = 500)
+// ----------------------------- INPUTS ----------------------------------------
+gS = "Sessions"
+tzIn   = input.string("Europe/London", "Timezone", options = ["UTC", "Europe/London", "America/New_York", "America/Chicago", "Europe/Berlin", "Asia/Tokyo", "Asia/Dubai", "Australia/Sydney"], group = gS)
+asiaIn = input.session("0000-0800", "Asia session", group = gS)
+lonIn  = input.session("0800-1300", "London session", group = gS)
+nyIn   = input.session("1300-2100", "New York session", group = gS)
+useA   = input.bool(true, "Trade Asia", group = gS)
+useL   = input.bool(true, "Trade London", group = gS)
+useN   = input.bool(true, "Trade New York", group = gS)
+boxOn  = input.bool(true, "Draw session boxes", group = gS)
+maxAge = input.float(12, "Previous range stale after (hours, 0 = never)", minval = 0, maxval = 200, group = gS)
 
+gT = "Structure"
+fracLen  = input.int(2, "Fractal strength", minval = 1, maxval = 10, group = gT)
+needBody = input.bool(true, "Require a body close through the fractal", group = gT)
+maxSet   = input.int(1, "Max setups per session", minval = 1, maxval = 5, group = gT)
 
-// ─────────────────────────────────────────────────────────────────────────────
-//  ① SESSIONS
-// ─────────────────────────────────────────────────────────────────────────────
-G1 = "① Sessions"
-i_tz      = input.string("UTC", "Session timezone", group = G1,
-     options = ["UTC", "America/New_York", "America/Chicago", "Europe/London",
-                "Europe/Berlin", "Asia/Dubai", "Asia/Tokyo", "Australia/Sydney"])
-i_asia    = input.session("0000-0800", "Asia",     group = G1)
-i_london  = input.session("0800-1300", "London",   group = G1)
-i_ny      = input.session("1300-2100", "New York", group = G1)
-i_showBox = input.bool(true,  "Draw the session boxes", group = G1)
-i_keepBox = input.int(9, "Boxes to keep on screen", minval = 1, maxval = 60, group = G1)
-i_maxAge  = input.float(12, "Previous range goes stale after (hours, 0 = never)",
-     minval = 0, maxval = 200, step = 1, group = G1,
-     tooltip = "Running every session means Monday's Asia would otherwise sweep FRIDAY " +
-               "New York's range - 50-odd hours and a weekend gap old. 12 covers every " +
-               "normal handover (the longest is the 3h gap before Asia) and rejects the " +
-               "weekend carry-over. Set 0 to allow it.")
+gE = "Entry, stop, target"
+fibIn    = input.float(0.618, "Fib entry level", minval = 0.1, maxval = 0.99, step = 0.001, group = gE)
+rrIn     = input.float(2.0, "Target R multiple", minval = 0.5, maxval = 10, step = 0.1, group = gE)
+bufIn    = input.int(0, "Stop buffer in ticks", minval = 0, maxval = 1000, group = gE)
+extendOn = input.bool(true, "Redraw the fib while the leg runs", group = gE)
 
-i_useAsia = input.bool(true, "Hunt in Asia",     group = G1, inline = "h")
-i_useLon  = input.bool(true, "London",           group = G1, inline = "h")
-i_useNY   = input.bool(true, "New York",         group = G1, inline = "h")
+gR = "Position size"
+sizeOn  = input.bool(true, "Show lot size in the alert", group = gR)
+acctIn  = input.float(10000, "Account balance in quote currency", minval = 1, step = 100, group = gR)
+riskIn  = input.float(1.0, "Risk per trade percent", minval = 0.05, maxval = 25, step = 0.05, group = gR)
+lotUnit = input.float(100000, "Units per standard lot", minval = 1, group = gR)
+lotStp  = input.float(0.01, "Lot step", minval = 0.001, step = 0.01, group = gR)
 
+gA = "Alerts"
+alSweep = input.bool(false, "Alert on the sweep", group = gA)
+alArm   = input.bool(true, "Alert when a setup arms", group = gA)
+alMove  = input.bool(true, "Alert when the level moves", group = gA)
+alTap   = input.bool(true, "Alert when price taps the entry", group = gA)
+alDone  = input.bool(true, "Alert on target or stop", group = gA)
+movePip = input.float(1.0, "Re-alert only if the level moved more than this many pips", minval = 0, step = 0.1, group = gA)
 
-// ─────────────────────────────────────────────────────────────────────────────
-//  ② STRUCTURE
-// ─────────────────────────────────────────────────────────────────────────────
-G2 = "② Fractals & market structure shift"
-i_fractal   = input.int(2, "Fractal strength (bars each side)", minval = 1, maxval = 10, group = G2,
-     tooltip = "2 = the classic 5-bar Williams fractal.")
-i_bodyClose = input.bool(true, "Require a BODY close through the fractal", group = G2,
-     tooltip = "The video is explicit about this: a wick through the level is not a shift.")
-i_showFrac  = input.bool(false, "Show fractal markers", group = G2)
+gD = "Display"
+showLv = input.bool(true, "Entry stop target lines", group = gD)
+showTb = input.bool(true, "Status panel", group = gD)
 
+// ----------------------------- CONSTANTS -------------------------------------
+tickSz = syminfo.mintick
+ptVal  = syminfo.pointvalue == 0 ? 1.0 : syminfo.pointvalue
+pipSz  = syminfo.type == "forex" ? tickSz * 10 : tickSz
 
-// ─────────────────────────────────────────────────────────────────────────────
-//  ③ ENTRY / STOP / TARGET
-// ─────────────────────────────────────────────────────────────────────────────
-G3 = "③ Entry, stop, target"
-i_fib       = input.float(0.618, "Fib entry level", minval = 0.1, maxval = 0.99, step = 0.001, group = G3)
-i_rr        = input.float(2.0, "Take profit (R multiple)", minval = 0.5, maxval = 10, step = 0.1, group = G3,
-     tooltip = "The video is emphatic about a flat 2:1 and not chasing more.")
-i_slBufT    = input.int(0, "Stop buffer beyond the leg extreme (ticks)", minval = 0, maxval = 1000, group = G3)
-i_extendLeg = input.bool(true, "Redraw the fib while the leg keeps running", group = G3,
-     tooltip = "ON  - the leg extreme updates as price runs, so the 0.618 moves with it " +
-               "(what you would do by hand, and it re-alerts when the level shifts).\n" +
-               "OFF - the fib is frozen at the moment the shift confirms.")
-i_maxSetup  = input.int(1, "Max setups per session", minval = 1, maxval = 5, group = G3)
+// ----------------------------- SESSIONS --------------------------------------
+inA  = not na(time(timeframe.period, asiaIn, tzIn))
+inL  = not na(time(timeframe.period, lonIn, tzIn))
+inN  = not na(time(timeframe.period, nyIn, tzIn))
+sNow = inN ? 3 : inL ? 2 : inA ? 1 : 0
+sOk  = (sNow == 1 and useA) or (sNow == 2 and useL) or (sNow == 3 and useN)
 
-G3b = "③b Position size (shown in the alert)"
-i_showSize  = input.bool(true, "Work out the lot size for me", group = G3b)
-i_acct      = input.float(10000, "Account balance", minval = 1, step = 100, group = G3b,
-     tooltip = "In the PAIR'S QUOTE CURRENCY - USD for EURUSD and GBPUSD. If your " +
-               "account is in GBP or EUR, convert, or accept that the figure is " +
-               "approximate by the current rate.")
-i_riskPct   = input.float(1.0, "Risk per trade (%)", minval = 0.05, maxval = 25, step = 0.05, group = G3b)
-i_lotUnits  = input.float(100000, "Units per standard lot", minval = 1, group = G3b,
-     tooltip = "100000 for forex. Micro lot = 0.01.")
-i_lotStep   = input.float(0.01, "Lot step (rounds down)", minval = 0.001, step = 0.01, group = G3b)
+var int   curS  = 0
+var float sHi   = na
+var float sLo   = na
+var float pHi   = na
+var float pLo   = na
+var int   pS    = 0
+var int   pEnd  = na
+var box   sBox  = na
+var int   nSet  = 0
 
+var int   dir    = 0
+var bool  swept  = false
+var int   shift  = 0
+var float legH   = na
+var float legL   = na
+var float ent    = na
+var float stp    = na
+var float tgt    = na
+var bool  armed  = false
+var bool  livePos = false
+var float lastAl = na
+var int   armAt  = na
 
-// ─────────────────────────────────────────────────────────────────────────────
-//  ④ ALERTS
-// ─────────────────────────────────────────────────────────────────────────────
-G4 = "④ Alerts"
-i_alSweep  = input.bool(false, "Alert on the session sweep (early heads-up)", group = G4)
-i_alArmed  = input.bool(true,  "Alert when a setup arms  ← place your order here", group = G4)
-i_alMoved  = input.bool(true,  "Alert when an armed level moves", group = G4)
-i_alTap    = input.bool(true,  "Alert when price taps the 0.618", group = G4)
-i_alResult = input.bool(true,  "Alert on target / stop", group = G4)
-i_movePips = input.float(1.0, "…only re-alert if the level moved more than (pips)",
-     minval = 0.0, step = 0.1, group = G4)
-i_confirm  = input.bool(true, "Confirm structure signals on bar close", group = G4,
-     tooltip = "Keep ON. Off will fire on intrabar prints that can un-print.")
-i_json     = input.bool(false, "Send JSON instead of readable text", group = G4)
+chg = sNow != curS
 
+if chg
+    if curS != 0 and not na(sHi)
+        pHi := sHi
+        pLo := sLo
+        pS := curS
+        pEnd := time
+    curS := sNow
+    nSet := 0
+    sHi := sNow != 0 ? high : na
+    sLo := sNow != 0 ? low : na
+    dir := 0
+    swept := false
+    shift := 0
+    legH := na
+    legL := na
+    ent := na
+    stp := na
+    tgt := na
+    armed := false
+    livePos := false
+    lastAl := na
+    armAt := na
 
-// ─────────────────────────────────────────────────────────────────────────────
-//  ⑤ DISPLAY
-// ─────────────────────────────────────────────────────────────────────────────
-G5 = "⑤ Display"
-i_showLvls = input.bool(true, "Entry / stop / target lines", group = G5)
-i_showZone = input.bool(true, "Shade risk and reward",       group = G5)
-i_showTbl  = input.bool(true, "Status panel",                group = G5)
-i_showMss  = input.bool(true, "Mark the shift",              group = G5)
+if not chg and sNow != 0
+    sHi := math.max(nz(sHi, high), high)
+    sLo := math.min(nz(sLo, low), low)
 
+if chg and sNow != 0 and boxOn
+    bc = sNow == 1 ? color.orange : sNow == 2 ? color.blue : color.purple
+    sBox := box.new(bar_index, high, bar_index + 1, low, border_color = color.new(bc, 50), bgcolor = color.new(bc, 92))
 
-// ═══════════════════════════════════════════════════════════════════════════════
-//  HELPERS
-// ═══════════════════════════════════════════════════════════════════════════════
-tick = syminfo.mintick
-pv   = syminfo.pointvalue == 0 ? 1.0 : syminfo.pointvalue
-// a "pip" is 10 ticks on a 5-digit FX feed, 1 tick elsewhere
-pip  = syminfo.type == "forex" and (syminfo.mintick == 0.00001 or syminfo.mintick == 0.001)
-       ? syminfo.mintick * 10 : syminfo.mintick
+if sNow != 0 and boxOn and not na(sBox)
+    box.set_top(sBox, sHi)
+    box.set_bottom(sBox, sLo)
+    box.set_right(sBox, bar_index + 1)
 
-px(v) => str.tostring(v, format.mintick)
+// ----------------------------- FRACTALS --------------------------------------
+fh  = ta.pivothigh(high, fracLen, fracLen)
+fl  = ta.pivotlow(low, fracLen, fracLen)
+loN = ta.lowest(low, fracLen + 1)
+hiN = ta.highest(high, fracLen + 1)
 
-sessName(s) => s == 1 ? "Asia" : s == 2 ? "London" : s == 3 ? "New York" : "-"
-
-
-// ═══════════════════════════════════════════════════════════════════════════════
-//  SESSION TRACKING
-// ═══════════════════════════════════════════════════════════════════════════════
-inAsia = not na(time(timeframe.period, i_asia,   i_tz))
-inLon  = not na(time(timeframe.period, i_london, i_tz))
-inNY   = not na(time(timeframe.period, i_ny,     i_tz))
-
-// later sessions win if the windows are configured to overlap
-sessNow = inNY ? 3 : inLon ? 2 : inAsia ? 1 : 0
-
-var int   curSess  = 0
-var float sessHi   = na
-var float sessLo   = na
-var int   sessBar  = na
-var box   sessBox  = na
-var array<box>   boxes  = array.new<box>()
-var array<label> tags   = array.new<label>()
-
-// frozen range of the session that just finished
-var float prevHi   = na
-var float prevLo   = na
-var int   prevSess = 0
-var int   prevEnd  = na
-
-// per-session setup state
-var int   bias      = 0        // -1 hunting shorts, +1 hunting longs
-var bool  swept     = false
-var int   sweptBar  = na
-var int   mss       = 0        // -1 bearish shift, +1 bullish shift
-var float legHi     = na
-var float legLo     = na
-var float eEntry    = na
-var float eStop     = na
-var float eTarget   = na
-var bool  armed     = false
-var bool  filled    = false
-var float lastAlerted = na
-var int   setups    = 0
-var int   armBar    = na
-
-// A Pine function cannot assign to globals, so the reset is inlined at the two
-// points that need it: on a session change (before this bar's sweep check) and at
-// the end of the bar (after the alerts have read the state they report on).
-sessionChanged = sessNow != curSess
-
-if sessionChanged
-    // freeze the session that just ended - it becomes the range to sweep
-    if curSess != 0 and not na(sessHi)
-        prevHi   := sessHi
-        prevLo   := sessLo
-        prevSess := curSess
-        prevEnd  := time
-    curSess := sessNow
-    setups  := 0
-    sessHi  := sessNow != 0 ? high : na
-    sessLo  := sessNow != 0 ? low  : na
-    sessBar := sessNow != 0 ? bar_index : na
-    if sessNow != 0 and i_showBox
-        c = sessNow == 1 ? color.orange : sessNow == 2 ? color.blue : color.purple
-        sessBox := box.new(bar_index, high, bar_index + 1, low,
-             border_color = color.new(c, 45), bgcolor = color.new(c, 92), border_width = 1)
-        array.push(boxes, sessBox)
-        array.push(tags, label.new(bar_index, high, sessName(sessNow),
-             style = label.style_label_down, color = color.new(c, 70),
-             textcolor = color.new(color.white, 15), size = size.tiny))
-        if array.size(boxes) > i_keepBox
-            box.delete(array.shift(boxes))
-            label.delete(array.shift(tags))
-else if sessNow != 0
-    sessHi := math.max(nz(sessHi, high), high)
-    sessLo := math.min(nz(sessLo, low),  low)
-    if not na(sessBox)
-        box.set_top(sessBox, sessHi)
-        box.set_bottom(sessBox, sessLo)
-        box.set_right(sessBox, bar_index + 1)
-
-if sessionChanged
-    bias        := 0
-    swept       := false
-    sweptBar    := na
-    mss         := 0
-    legHi       := na
-    legLo       := na
-    eEntry      := na
-    eStop       := na
-    eTarget     := na
-    armed       := false
-    filled      := false
-    lastAlerted := na
-    armBar      := na
-
-sessionEnabled = (sessNow == 1 and i_useAsia) or (sessNow == 2 and i_useLon) or (sessNow == 3 and i_useNY)
-
-
-// ═══════════════════════════════════════════════════════════════════════════════
-//  FRACTALS
-// ═══════════════════════════════════════════════════════════════════════════════
-fh = ta.pivothigh(high, i_fractal, i_fractal)
-fl = ta.pivotlow(low,  i_fractal, i_fractal)
-
-var float lastFH = na
-var float lastFL = na
-// running extremes since the anchor fractal, used to size the impulse leg
-var float minSinceFH = na
-var float maxSinceFL = na
+var float lastH = na
+var float lastL = na
+var float minSince = na
+var float maxSince = na
 
 if not na(fh)
-    lastFH     := fh
-    minSinceFH := ta.lowest(low, i_fractal + 1)
+    lastH := fh
+    minSince := loN
 else
-    minSinceFH := math.min(nz(minSinceFH, low), low)
+    minSince := math.min(nz(minSince, low), low)
 
 if not na(fl)
-    lastFL     := fl
-    maxSinceFL := ta.highest(high, i_fractal + 1)
+    lastL := fl
+    maxSince := hiN
 else
-    maxSinceFL := math.max(nz(maxSinceFL, high), high)
+    maxSince := math.max(nz(maxSince, high), high)
 
-
-// ═══════════════════════════════════════════════════════════════════════════════
-//  STEP 1  -  the sweep
-// ═══════════════════════════════════════════════════════════════════════════════
+// ----------------------------- STEP 1  SWEEP ---------------------------------
+fresh = maxAge <= 0 or (not na(pEnd) and (time - pEnd) <= maxAge * 3600000)
 sweepNow = false
-rangeFresh = i_maxAge <= 0 or (not na(prevEnd) and (time - prevEnd) <= i_maxAge * 3600000)
 
-if sessNow != 0 and sessionEnabled and rangeFresh and not swept and not na(prevHi) and not na(prevLo)
-    hitHi = high > prevHi
-    hitLo = low  < prevLo
-    if hitHi or hitLo
-        // If one bar takes both sides we cannot see which went first. A down-closing
-        // bar most likely ran the high before reversing, and vice versa.
-        bias     := hitHi and hitLo ? (close < open ? -1 : 1) : hitHi ? -1 : 1
-        swept    := true
-        sweptBar := bar_index
+if sNow != 0 and sOk and fresh and not swept and not na(pHi) and not na(pLo)
+    hiHit = high > pHi
+    loHit = low < pLo
+    if hiHit or loHit
+        dir := hiHit and loHit ? (close < open ? -1 : 1) : (hiHit ? -1 : 1)
+        swept := true
         sweepNow := true
 
+// ----------------------------- STEP 2  SHIFT ---------------------------------
+brkDn = not na(lastL) and (needBody ? close < lastL : low < lastL)
+brkUp = not na(lastH) and (needBody ? close > lastH : high > lastH)
+mssNow = false
 
-// ═══════════════════════════════════════════════════════════════════════════════
-//  STEP 2  -  the market structure shift
-// ═══════════════════════════════════════════════════════════════════════════════
-brokeDown = not na(lastFL) and (i_bodyClose ? close < lastFL : low  < lastFL)
-brokeUp   = not na(lastFH) and (i_bodyClose ? close > lastFH : high > lastFH)
-
-confirmOk = not i_confirm or barstate.isconfirmed
-mssNow    = false
-
-if swept and mss == 0 and setups < i_maxSetup and sessNow != 0 and confirmOk
-    if bias == -1 and not na(lastFL) and brokeDown
-        mss    := -1
-        legHi  := nz(lastFH, high)
-        legLo  := nz(minSinceFH, low)
+if swept and shift == 0 and sNow != 0 and not livePos and nSet < maxSet and barstate.isconfirmed
+    if dir == -1 and brkDn
+        shift := -1
+        legH := nz(lastH, high)
+        legL := nz(minSince, low)
         mssNow := true
-    else if bias == 1 and not na(lastFH) and brokeUp
-        mss    := 1
-        legLo  := nz(lastFL, low)
-        legHi  := nz(maxSinceFL, high)
+    if dir == 1 and brkUp
+        shift := 1
+        legL := nz(lastL, low)
+        legH := nz(maxSince, high)
         mssNow := true
 
+// ----------------------------- STEP 3  FIB -----------------------------------
+moved = false
 
-// ═══════════════════════════════════════════════════════════════════════════════
-//  STEP 3  -  the fib, and the resulting order
-// ═══════════════════════════════════════════════════════════════════════════════
-levelMoved = false
-
-if mss != 0
-    // the leg extends while price keeps running in the shift direction
-    if i_extendLeg and not filled
-        if mss == -1
-            legLo := math.min(legLo, low)
-        else
-            legHi := math.max(legHi, high)
-
-    rng = legHi - legLo
-    if rng > 0
-        newEntry = mss == -1 ? legLo + i_fib * rng : legHi - i_fib * rng
-        newStop  = mss == -1 ? legHi + i_slBufT * tick : legLo - i_slBufT * tick
-        risk     = math.abs(newStop - newEntry)
-        newTgt   = mss == -1 ? newEntry - i_rr * risk : newEntry + i_rr * risk
-
-        if not filled
-            levelMoved := armed and math.abs(newEntry - nz(lastAlerted, newEntry)) > i_movePips * pip
-            eEntry  := newEntry
-            eStop   := newStop
-            eTarget := newTgt
-            if not armed
-                armed  := true
-                armBar := bar_index
+if shift != 0 and not livePos
+    if extendOn and shift == -1
+        legL := math.min(legL, low)
+    if extendOn and shift == 1
+        legH := math.max(legH, high)
+    rngv = legH - legL
+    if rngv > 0
+        newEnt = shift == -1 ? legL + fibIn * rngv : legH - fibIn * rngv
+        newStp = shift == -1 ? legH + bufIn * tickSz : legL - bufIn * tickSz
+        rsk = math.abs(newStp - newEnt)
+        moved := armed and math.abs(newEnt - nz(lastAl, newEnt)) > movePip * pipSz
+        ent := newEnt
+        stp := newStp
+        tgt := shift == -1 ? newEnt - rrIn * rsk : newEnt + rrIn * rsk
+        if not armed
+            armAt := bar_index
+        armed := true
 
 // invalidation: price trades back through the origin of the leg
-bool cancelled = false
-if armed and not filled
-    if mss == -1 ? high > legHi + i_slBufT * tick : low < legLo - i_slBufT * tick
-        cancelled := true
+killed = false
+if armed and not livePos and shift == -1 and high > legH + bufIn * tickSz
+    killed := true
+if armed and not livePos and shift == 1 and low < legL - bufIn * tickSz
+    killed := true
 
 // the tap
 tapNow = false
-if armed and not filled and not cancelled and not na(eEntry)
-    if (mss == -1 and high >= eEntry) or (mss == 1 and low <= eEntry)
-        filled := true
-        setups += 1
-        tapNow := true
+if armed and not livePos and not killed and not na(ent) and shift == -1 and high >= ent
+    livePos := true
+    tapNow := true
+    nSet := nSet + 1
+if armed and not livePos and not killed and not na(ent) and shift == 1 and low <= ent
+    livePos := true
+    tapNow := true
+    nSet := nSet + 1
 
-// result
-hitTgt = false
-hitSl  = false
-if filled and not na(eTarget)
-    if mss == -1
-        hitTgt := low  <= eTarget
-        hitSl  := high >= eStop
-    else
-        hitTgt := high >= eTarget
-        hitSl  := low  <= eStop
+// the result
+winNow = false
+lossNow = false
+if livePos and not na(tgt) and shift == -1 and low <= tgt
+    winNow := true
+if livePos and not na(stp) and shift == -1 and high >= stp
+    lossNow := true
+if livePos and not na(tgt) and shift == 1 and high >= tgt
+    winNow := true
+if livePos and not na(stp) and shift == 1 and low <= stp
+    lossNow := true
 
+// ----------------------------- SIZE ------------------------------------------
+sDist  = math.abs(nz(stp) - nz(ent))
+rCash  = acctIn * riskIn / 100.0
+rUnits = sDist > 0 ? rCash / (sDist * ptVal) : 0.0
+lots   = math.floor(rUnits / lotUnit / lotStp) * lotStp
 
-// ═══════════════════════════════════════════════════════════════════════════════
-//  ALERTS
-// ═══════════════════════════════════════════════════════════════════════════════
-dirWord  = mss == -1 ? "SHORT" : "LONG"
-dirArrow = mss == -1 ? "🔻" : "🔺"
-sweptSide = bias == -1 ? "HIGH" : "LOW"
+// ----------------------------- MESSAGE ---------------------------------------
+sideTxt  = shift == -1 ? "SHORT" : "LONG"
+sweepTxt = dir == -1 ? "HIGH" : "LOW"
+nowName  = curS == 1 ? "Asia" : curS == 2 ? "London" : curS == 3 ? "New York" : "-"
+prevName = pS == 1 ? "Asia" : pS == 2 ? "London" : pS == 3 ? "New York" : "-"
+lotTxt   = lots <= 0 ? "BELOW MIN LOT" : str.tostring(lots, "#.##") + " lots"
 
-// size = risk / stop distance, rounded DOWN to a tradeable lot step
-stopDist  = math.abs(nz(eStop) - nz(eEntry))
-riskCash  = i_acct * i_riskPct / 100.0
-rawUnits  = stopDist > 0 ? riskCash / (stopDist * pv) : 0.0
-lots      = math.floor(rawUnits / i_lotUnits / i_lotStep) * i_lotStep
-lotsTxt   = lots <= 0 ? "BELOW MIN LOT" : str.tostring(lots, "#.##") + " lots"
+msg = sideTxt + " " + syminfo.ticker + " " + timeframe.period + "\n"
+msg := msg + nowName + " swept " + prevName + " " + sweepTxt + "\n"
+msg := msg + "Entry  " + str.tostring(ent, format.mintick) + "\n"
+msg := msg + "Stop   " + str.tostring(stp, format.mintick) + "\n"
+msg := msg + "Target " + str.tostring(tgt, format.mintick) + "\n"
+msg := msg + "Risk   " + str.tostring(sDist / pipSz, "#.#") + " pips"
 
-f_ticket(kind) =>
-    risk = math.abs(nz(eStop) - nz(eEntry))
-    if i_json
-        '{"signal":"' + kind + '","side":"' + str.lower(dirWord) +
-         '","symbol":"' + syminfo.ticker + '","tf":"' + timeframe.period +
-         '","session":"' + sessName(curSess) + '","swept":"' + str.lower(sweptSide) +
-         '","entry":' + px(eEntry) + ',"sl":' + px(eStop) + ',"tp":' + px(eTarget) +
-         ',"rr":' + str.tostring(i_rr) +
-         ',"risk_pips":' + str.tostring(risk / pip, "#.#") +
-         ',"lots":' + str.tostring(lots, "#.##") + '}'
-    else
-        dirArrow + " " + kind + " · " + dirWord + " " + syminfo.ticker + " " + timeframe.period + "\n" +
-         sessName(curSess) + " swept " + sessName(prevSess) + " " + sweptSide +
-         " · structure shifted" + "\n" +
-         "Entry (" + str.tostring(i_fib) + "): " + px(eEntry) + "\n" +
-         "Stop:  " + px(eStop) + "\n" +
-         "Target (" + str.tostring(i_rr, "#.#") + "R): " + px(eTarget) + "\n" +
-         "Risk:  " + str.tostring(risk / pip, "#.#") + " pips" +
-         (i_showSize ? "\nSize:  " + lotsTxt + "   (" + str.tostring(riskCash, "#.##") + " " +
-              syminfo.currency + " at risk)" : "")
+if sizeOn
+    msg := msg + "\nSize   " + lotTxt
 
-if i_alSweep and sweepNow and confirmOk
-    alert("👀 SWEEP · " + syminfo.ticker + " " + timeframe.period + "\n" +
-         sessName(curSess) + " took " + sessName(prevSess) + " " + sweptSide +
-         "\nNow watching for a " + (bias == -1 ? "bearish" : "bullish") + " structure shift.",
-         alert.freq_once_per_bar)
+// ----------------------------- ALERTS ----------------------------------------
+if alSweep and sweepNow
+    alert("SWEEP  " + syminfo.ticker + "  " + nowName + " took " + prevName + " " + sweepTxt, alert.freq_once_per_bar)
 
-if i_alArmed and armed and armBar == bar_index and not na(eEntry)
-    alert(f_ticket("SETUP ARMED"), alert.freq_once_per_bar)
-    lastAlerted := eEntry
+if alArm and armed and armAt == bar_index and not na(ent)
+    alert("SETUP ARMED\n" + msg, alert.freq_once_per_bar)
+    lastAl := ent
 
-if i_alMoved and levelMoved and not na(eEntry)
-    alert(f_ticket("LEVEL MOVED"), alert.freq_once_per_bar)
-    lastAlerted := eEntry
+if alMove and moved and not na(ent)
+    alert("LEVEL MOVED\n" + msg, alert.freq_once_per_bar)
+    lastAl := ent
 
-if i_alTap and tapNow
-    alert(f_ticket("ENTRY TAPPED"), alert.freq_once_per_bar)
+if alTap and tapNow
+    alert("ENTRY TAPPED\n" + msg, alert.freq_once_per_bar)
 
-if i_alResult and hitTgt
-    alert("✅ TARGET · " + syminfo.ticker + " " + timeframe.period + " · +" +
-         str.tostring(i_rr, "#.#") + "R", alert.freq_once_per_bar)
-if i_alResult and hitSl
-    alert("❌ STOP · " + syminfo.ticker + " " + timeframe.period + " · -1R",
-         alert.freq_once_per_bar)
+if alDone and winNow
+    alert("TARGET HIT  " + syminfo.ticker + "  plus " + str.tostring(rrIn, "#.#") + "R", alert.freq_once_per_bar)
 
+if alDone and lossNow
+    alert("STOP HIT  " + syminfo.ticker + "  minus 1R", alert.freq_once_per_bar)
 
-// ═══════════════════════════════════════════════════════════════════════════════
-//  DISPLAY
-// ═══════════════════════════════════════════════════════════════════════════════
-plotshape(i_showFrac and not na(fh) ? fh : na, "Fractal high", shape.triangledown,
-     location.absolute, color.new(color.red, 30), offset = -i_fractal, size = size.tiny)
-plotshape(i_showFrac and not na(fl) ? fl : na, "Fractal low", shape.triangleup,
-     location.absolute, color.new(color.green, 30), offset = -i_fractal, size = size.tiny)
+// ----------------------------- DRAWING ---------------------------------------
+if mssNow and shift == -1
+    label.new(bar_index, high, "MSS", style = label.style_label_down, color = color.new(color.red, 20), textcolor = color.white, size = size.tiny)
 
-plotshape(i_showMss and sweepNow ? (bias == -1 ? high : low) : na, "Sweep", shape.xcross,
-     location.absolute, color.new(color.yellow, 0), size = size.tiny)
+if mssNow and shift == 1
+    label.new(bar_index, low, "MSS", style = label.style_label_up, color = color.new(color.green, 20), textcolor = color.white, size = size.tiny)
 
-if i_showMss and mssNow
-    label.new(bar_index, mss == -1 ? high : low, "MSS " + dirWord,
-         style = mss == -1 ? label.style_label_down : label.style_label_up,
-         color = color.new(mss == -1 ? color.red : color.green, 25),
-         textcolor = color.white, size = size.tiny)
+showE = showLv and armed and not na(ent)
+plot(showE ? ent : na, "Entry", color.new(color.orange, 0), 2, plot.style_linebr)
+plot(showE ? stp : na, "Stop", color.new(color.red, 0), 1, plot.style_linebr)
+plot(showE ? tgt : na, "Target", color.new(color.green, 0), 1, plot.style_linebr)
+plot(sNow != 0 and not na(pHi) ? pHi : na, "Prev high", color.new(color.gray, 30), 1, plot.style_linebr)
+plot(sNow != 0 and not na(pLo) ? pLo : na, "Prev low", color.new(color.gray, 30), 1, plot.style_linebr)
 
-live = armed and not na(eEntry)
-pE = plot(i_showLvls and live ? eEntry  : na, "Entry 0.618", color.new(color.orange, 0), 2, plot.style_linebr)
-pS = plot(i_showLvls and live ? eStop   : na, "Stop",        color.new(color.red, 0),    1, plot.style_linebr)
-pT = plot(i_showLvls and live ? eTarget : na, "Target",      color.new(color.green, 0),  1, plot.style_linebr)
-fill(pE, pS, i_showZone ? color.new(color.red, 88)   : na, title = "Risk")
-fill(pE, pT, i_showZone ? color.new(color.green, 88) : na, title = "Reward")
+// ----------------------------- PANEL -----------------------------------------
+var table tb = table.new(position.top_right, 2, 7, bgcolor = color.new(color.black, 20), border_width = 1)
 
-plot(sessNow != 0 and not na(prevHi) ? prevHi : na, "Prev session high",
-     color.new(color.gray, 30), 1, plot.style_linebr)
-plot(sessNow != 0 and not na(prevLo) ? prevLo : na, "Prev session low",
-     color.new(color.gray, 30), 1, plot.style_linebr)
+if showTb and barstate.islast
+    stTxt = "waiting for sweep"
+    if sNow == 0
+        stTxt := "no session"
+    if sNow != 0 and not sOk
+        stTxt := "session switched off"
+    if sNow != 0 and sOk and not fresh
+        stTxt := "prev range stale"
+    if swept and shift == 0
+        stTxt := "waiting for the shift"
+    if armed and not livePos
+        stTxt := "ARMED at the 0.618"
+    if livePos
+        stTxt := "in trade"
+    table.cell(tb, 0, 0, "SWEEP MSS 618", text_color = color.white, text_size = size.tiny)
+    table.cell(tb, 1, 0, nowName, text_color = color.white, text_size = size.tiny)
+    table.cell(tb, 0, 1, "state", text_color = color.silver, text_size = size.tiny)
+    table.cell(tb, 1, 1, stTxt, text_color = color.aqua, text_size = size.tiny)
+    table.cell(tb, 0, 2, "prev range", text_color = color.silver, text_size = size.tiny)
+    table.cell(tb, 1, 2, na(pHi) ? "-" : str.tostring(pLo, format.mintick) + " / " + str.tostring(pHi, format.mintick), text_color = color.silver, text_size = size.tiny)
+    table.cell(tb, 0, 3, "sweep", text_color = color.silver, text_size = size.tiny)
+    table.cell(tb, 1, 3, swept ? sweepTxt + " taken" : "none", text_color = color.yellow, text_size = size.tiny)
+    table.cell(tb, 0, 4, "entry", text_color = color.silver, text_size = size.tiny)
+    table.cell(tb, 1, 4, showE ? str.tostring(ent, format.mintick) : "-", text_color = color.orange, text_size = size.tiny)
+    table.cell(tb, 0, 5, "stop / target", text_color = color.silver, text_size = size.tiny)
+    table.cell(tb, 1, 5, showE ? str.tostring(stp, format.mintick) + " / " + str.tostring(tgt, format.mintick) : "-", text_color = color.silver, text_size = size.tiny)
+    table.cell(tb, 0, 6, "size", text_color = color.silver, text_size = size.tiny)
+    table.cell(tb, 1, 6, showE ? lotTxt : "-", text_color = color.white, text_size = size.tiny)
 
-// ── status panel ─────────────────────────────────────────────────────────────
-var table tb = table.new(position.top_right, 2, 9, bgcolor = color.new(color.black, 15),
-     border_color = color.new(color.gray, 60), border_width = 1,
-     frame_color = color.new(color.gray, 40), frame_width = 1)
-
-f_r(row, k, v, c) =>
-    table.cell(tb, 0, row, k, text_color = color.new(color.silver, 0), text_size = size.tiny,
-         text_halign = text.align_left)
-    table.cell(tb, 1, row, v, text_color = c, text_size = size.tiny, text_halign = text.align_right)
-
-if i_showTbl and barstate.islast
-    step = not sessionEnabled ? "session off" :
-           sessNow == 0 ? "no session" :
-           not rangeFresh ? "prev range stale - skipping" :
-           not swept ? "1 · waiting for the sweep" :
-           mss == 0 ? "2 · waiting for the shift" :
-           filled ? "in trade" : "3 · ARMED at the 0.618"
-    stepCol = filled ? color.new(color.aqua, 0) : armed ? color.new(color.lime, 0) : color.new(color.silver, 0)
-
-    table.cell(tb, 0, 0, "SWEEP · MSS · 0.618", text_color = color.white, text_size = size.tiny,
-         text_halign = text.align_left)
-    table.cell(tb, 1, 0, timeframe.period, text_color = color.white, text_size = size.tiny,
-         text_halign = text.align_right)
-
-    f_r(1, "session",  sessName(curSess), color.new(color.white, 0))
-    f_r(2, "prev range", na(prevHi) ? "-" : sessName(prevSess) + "  " + px(prevLo) + " / " + px(prevHi),
-         color.new(color.silver, 0))
-    f_r(3, "sweep",    swept ? sweptSide + " taken → " + (bias == -1 ? "shorts" : "longs") : "none",
-         swept ? color.new(color.yellow, 0) : color.new(color.gray, 0))
-    f_r(4, "step",     step, stepCol)
-    f_r(5, "entry",    live ? px(eEntry)  : "-", color.new(color.orange, 0))
-    f_r(6, "stop",     live ? px(eStop)   : "-", color.new(color.red, 0))
-    f_r(7, "target",   live ? px(eTarget) + "   (" + str.tostring(i_rr, "#.#") + "R)" : "-",
-         color.new(color.green, 0))
-    if i_showSize
-        f_r(8, "size", live ? lotsTxt : "-",
-             live and lots <= 0 ? color.new(color.red, 0) : color.new(color.white, 0))
-
-
-// ═══════════════════════════════════════════════════════════════════════════════
-//  END-OF-BAR RESET
-//  Runs last, so every alert above reported on intact state.
-// ═══════════════════════════════════════════════════════════════════════════════
-if cancelled or hitTgt or hitSl
-    bias        := 0
-    swept       := false
-    sweptBar    := na
-    mss         := 0
-    legHi       := na
-    legLo       := na
-    eEntry      := na
-    eStop       := na
-    eTarget     := na
-    armed       := false
-    filled      := false
-    lastAlerted := na
-    armBar      := na
+// ----------------------------- END OF BAR RESET ------------------------------
+// Runs last so every alert, plot and panel cell above read intact state.
+if killed or winNow or lossNow
+    dir := 0
+    swept := false
+    shift := 0
+    legH := na
+    legL := na
+    ent := na
+    stp := na
+    tgt := na
+    armed := false
+    livePos := false
+    lastAl := na
+    armAt := na
