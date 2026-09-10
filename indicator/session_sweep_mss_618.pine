@@ -82,6 +82,17 @@ i_extendLeg = input.bool(true, "Redraw the fib while the leg keeps running", gro
                "OFF - the fib is frozen at the moment the shift confirms.")
 i_maxSetup  = input.int(1, "Max setups per session", minval = 1, maxval = 5, group = G3)
 
+G3b = "③b Position size (shown in the alert)"
+i_showSize  = input.bool(true, "Work out the lot size for me", group = G3b)
+i_acct      = input.float(10000, "Account balance", minval = 1, step = 100, group = G3b,
+     tooltip = "In the PAIR'S QUOTE CURRENCY - USD for EURUSD and GBPUSD. If your " +
+               "account is in GBP or EUR, convert, or accept that the figure is " +
+               "approximate by the current rate.")
+i_riskPct   = input.float(1.0, "Risk per trade (%)", minval = 0.05, maxval = 25, step = 0.05, group = G3b)
+i_lotUnits  = input.float(100000, "Units per standard lot", minval = 1, group = G3b,
+     tooltip = "100000 for forex. Micro lot = 0.01.")
+i_lotStep   = input.float(0.01, "Lot step (rounds down)", minval = 0.001, step = 0.01, group = G3b)
+
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  ④ ALERTS
@@ -113,6 +124,7 @@ i_showMss  = input.bool(true, "Mark the shift",              group = G5)
 //  HELPERS
 // ═══════════════════════════════════════════════════════════════════════════════
 tick = syminfo.mintick
+pv   = syminfo.pointvalue == 0 ? 1.0 : syminfo.pointvalue
 // a "pip" is 10 ticks on a 5-digit FX feed, 1 tick elsewhere
 pip  = syminfo.type == "forex" and (syminfo.mintick == 0.00001 or syminfo.mintick == 0.001)
        ? syminfo.mintick * 10 : syminfo.mintick
@@ -339,6 +351,13 @@ dirWord  = mss == -1 ? "SHORT" : "LONG"
 dirArrow = mss == -1 ? "🔻" : "🔺"
 sweptSide = bias == -1 ? "HIGH" : "LOW"
 
+// size = risk / stop distance, rounded DOWN to a tradeable lot step
+stopDist  = math.abs(nz(eStop) - nz(eEntry))
+riskCash  = i_acct * i_riskPct / 100.0
+rawUnits  = stopDist > 0 ? riskCash / (stopDist * pv) : 0.0
+lots      = math.floor(rawUnits / i_lotUnits / i_lotStep) * i_lotStep
+lotsTxt   = lots <= 0 ? "BELOW MIN LOT" : str.tostring(lots, "#.##") + " lots"
+
 f_ticket(kind) =>
     risk = math.abs(nz(eStop) - nz(eEntry))
     if i_json
@@ -347,7 +366,8 @@ f_ticket(kind) =>
          '","session":"' + sessName(curSess) + '","swept":"' + str.lower(sweptSide) +
          '","entry":' + px(eEntry) + ',"sl":' + px(eStop) + ',"tp":' + px(eTarget) +
          ',"rr":' + str.tostring(i_rr) +
-         ',"risk_pips":' + str.tostring(risk / pip, "#.#") + '}'
+         ',"risk_pips":' + str.tostring(risk / pip, "#.#") +
+         ',"lots":' + str.tostring(lots, "#.##") + '}'
     else
         dirArrow + " " + kind + " · " + dirWord + " " + syminfo.ticker + " " + timeframe.period + "\n" +
          sessName(curSess) + " swept " + sessName(prevSess) + " " + sweptSide +
@@ -355,7 +375,9 @@ f_ticket(kind) =>
          "Entry (" + str.tostring(i_fib) + "): " + px(eEntry) + "\n" +
          "Stop:  " + px(eStop) + "\n" +
          "Target (" + str.tostring(i_rr, "#.#") + "R): " + px(eTarget) + "\n" +
-         "Risk:  " + str.tostring(risk / pip, "#.#") + " pips"
+         "Risk:  " + str.tostring(risk / pip, "#.#") + " pips" +
+         (i_showSize ? "\nSize:  " + lotsTxt + "   (" + str.tostring(riskCash, "#.##") + " " +
+              syminfo.currency + " at risk)" : "")
 
 if i_alSweep and sweepNow and confirmOk
     alert("👀 SWEEP · " + syminfo.ticker + " " + timeframe.period + "\n" +
@@ -412,7 +434,7 @@ plot(sessNow != 0 and not na(prevLo) ? prevLo : na, "Prev session low",
      color.new(color.gray, 30), 1, plot.style_linebr)
 
 // ── status panel ─────────────────────────────────────────────────────────────
-var table tb = table.new(position.top_right, 2, 8, bgcolor = color.new(color.black, 15),
+var table tb = table.new(position.top_right, 2, 9, bgcolor = color.new(color.black, 15),
      border_color = color.new(color.gray, 60), border_width = 1,
      frame_color = color.new(color.gray, 40), frame_width = 1)
 
@@ -444,6 +466,9 @@ if i_showTbl and barstate.islast
     f_r(6, "stop",     live ? px(eStop)   : "-", color.new(color.red, 0))
     f_r(7, "target",   live ? px(eTarget) + "   (" + str.tostring(i_rr, "#.#") + "R)" : "-",
          color.new(color.green, 0))
+    if i_showSize
+        f_r(8, "size", live ? lotsTxt : "-",
+             live and lots <= 0 ? color.new(color.red, 0) : color.new(color.white, 0))
 
 
 // ═══════════════════════════════════════════════════════════════════════════════

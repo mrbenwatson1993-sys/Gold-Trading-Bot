@@ -20,6 +20,8 @@ the order yourself.
 **Setup guide: [docs/ALERTS.md](docs/ALERTS.md)** — read this one, it's the whole
 workflow. **[docs/BACKTESTING.md](docs/BACKTESTING.md)** covers the backtest twin,
 which shares the detection logic line for line and breaks results down per session.
+**[docs/FOREX-SETUP.md](docs/FOREX-SETUP.md)** has ready-to-use settings for EURUSD and
+GBPUSD — and why running both at once is one position, not two.
 
 ### The three steps
 

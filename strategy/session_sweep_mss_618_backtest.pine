@@ -92,10 +92,11 @@ i_riskPct   = input.float(1.0, "Risk % of equity", minval = 0.05, maxval = 25, s
 i_riskCash  = input.float(100.0, "…or fixed cash risk", minval = 0.01, step = 1, group = G4,
      tooltip = "Fixed cash makes every trade exactly 1R, so net profit / risk reads " +
                "straight off as total R. Best setting for judging the edge itself.")
-i_qtyStep   = input.float(1, "Position size step (rounds down)", minval = 0.000001, group = G4,
-     tooltip = "Forex units: 1000 for micro lots, 1 for unit-denominated feeds. " +
-               "Set this to match how your broker actually sizes.")
-i_minQty    = input.float(1, "Minimum position size", minval = 0.000001, group = G4)
+i_qtyStep   = input.float(1000, "Position size step (rounds down)", minval = 0.000001, group = G4,
+     tooltip = "Forex qty is in UNITS of the base currency. 1000 units = 0.01 lots = " +
+               "one micro lot, which is the smallest most brokers allow. Use 10000 for " +
+               "mini lots, 100000 for standard.")
+i_minQty    = input.float(1000, "Minimum position size", minval = 0.000001, group = G4)
 i_skipSmall = input.bool(true, "Skip the trade if minimum size exceeds the risk budget", group = G4)
 
 
