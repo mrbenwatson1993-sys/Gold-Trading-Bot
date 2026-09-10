@@ -1,0 +1,437 @@
+//@version=6
+// ═══════════════════════════════════════════════════════════════════════════════
+//  SESSION SWEEP → MSS → 0.618   ·   BACKTEST
+// ═══════════════════════════════════════════════════════════════════════════════
+//
+//  The backtestable twin of indicator/session_sweep_mss_618.pine. The detection
+//  logic is identical line for line, so what you measure here is what the alert
+//  tool will send you.
+//
+//  Built to answer one question: does the flat 2:1 actually pay on YOUR pair, in
+//  YOUR spread, over a sample bigger than five hand-picked screenshots?
+//
+//  ── BEFORE YOU READ A SINGLE NUMBER ──────────────────────────────────────────
+//  Open Properties and set Commission and Slippage to your broker's real costs.
+//  On a ~25 pip stop, a 1 pip spread is 4% of your risk on every single trade and
+//  it comes out of the win side only. A backtest with zero costs is fiction.
+//
+//  ── AND KNOW THIS LIMIT ──────────────────────────────────────────────────────
+//  On 5-minute bars TradingView cannot see the order of events inside a bar. When
+//  one candle tags both the entry and the stop, the result is an assumption, not a
+//  fact. Treat the equity curve as indicative. It is a filter for obviously bad
+//  ideas, not proof of a good one.
+// ═══════════════════════════════════════════════════════════════════════════════
+
+strategy(
+     title                   = "Session Sweep → MSS → 0.618 · backtest",
+     shorttitle              = "SWEEP·MSS·618 BT",
+     overlay                 = true,
+     initial_capital         = 10000,
+     currency                = currency.USD,
+     default_qty_type        = strategy.fixed,
+     default_qty_value       = 1,
+     pyramiding              = 0,
+     calc_on_every_tick      = false,
+     process_orders_on_close = true,
+     close_entries_rule      = "ANY",
+     commission_type         = strategy.commission.percent,
+     commission_value        = 0.0,
+     max_boxes_count         = 500,
+     max_labels_count        = 500)
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  ① SESSIONS                                    (identical to the alert tool)
+// ─────────────────────────────────────────────────────────────────────────────
+G1 = "① Sessions"
+i_tz      = input.string("UTC", "Session timezone", group = G1,
+     options = ["UTC", "America/New_York", "America/Chicago", "Europe/London",
+                "Europe/Berlin", "Asia/Dubai", "Asia/Tokyo", "Australia/Sydney"])
+i_asia    = input.session("0000-0800", "Asia",     group = G1)
+i_london  = input.session("0800-1300", "London",   group = G1)
+i_ny      = input.session("1300-2100", "New York", group = G1)
+i_showBox = input.bool(true, "Draw the session boxes", group = G1)
+i_keepBox = input.int(9, "Boxes to keep on screen", minval = 1, maxval = 60, group = G1)
+
+i_useAsia = input.bool(true, "Trade Asia", group = G1, inline = "h")
+i_useLon  = input.bool(true, "London",     group = G1, inline = "h")
+i_useNY   = input.bool(true, "New York",   group = G1, inline = "h")
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  ② STRUCTURE
+// ─────────────────────────────────────────────────────────────────────────────
+G2 = "② Fractals & market structure shift"
+i_fractal   = input.int(2, "Fractal strength (bars each side)", minval = 1, maxval = 10, group = G2)
+i_bodyClose = input.bool(true, "Require a BODY close through the fractal", group = G2)
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  ③ ENTRY / STOP / TARGET
+// ─────────────────────────────────────────────────────────────────────────────
+G3 = "③ Entry, stop, target"
+i_fib       = input.float(0.618, "Fib entry level", minval = 0.1, maxval = 0.99, step = 0.001, group = G3)
+i_rr        = input.float(2.0, "Take profit (R multiple)", minval = 0.5, maxval = 10, step = 0.1, group = G3)
+i_slBufT    = input.int(0, "Stop buffer beyond the leg extreme (ticks)", minval = 0, maxval = 1000, group = G3)
+i_extendLeg = input.bool(true, "Redraw the fib while the leg keeps running", group = G3,
+     tooltip = "ON reproduces redrawing the fib by hand as the leg extends, and the " +
+               "resting limit follows the 0.618. OFF freezes it at the shift.")
+i_maxSetup  = input.int(1, "Max setups per session", minval = 1, maxval = 5, group = G3)
+i_flatEOS   = input.bool(false, "Close any open trade at session end", group = G3,
+     tooltip = "The video does not do this - trades are left to reach 2R or stop. " +
+               "Turning it on will change the results, usually for the worse.")
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  ④ RISK
+// ─────────────────────────────────────────────────────────────────────────────
+G4 = "④ Risk"
+i_riskMode  = input.string("Percent of equity", "Risk per trade", group = G4,
+     options = ["Percent of equity", "Fixed cash"])
+i_riskPct   = input.float(1.0, "Risk % of equity", minval = 0.05, maxval = 25, step = 0.05, group = G4)
+i_riskCash  = input.float(100.0, "…or fixed cash risk", minval = 0.01, step = 1, group = G4,
+     tooltip = "Fixed cash makes every trade exactly 1R, so net profit / risk reads " +
+               "straight off as total R. Best setting for judging the edge itself.")
+i_qtyStep   = input.float(1, "Position size step (rounds down)", minval = 0.000001, group = G4,
+     tooltip = "Forex units: 1000 for micro lots, 1 for unit-denominated feeds. " +
+               "Set this to match how your broker actually sizes.")
+i_minQty    = input.float(1, "Minimum position size", minval = 0.000001, group = G4)
+i_skipSmall = input.bool(true, "Skip the trade if minimum size exceeds the risk budget", group = G4)
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  ⑤ TEST WINDOW & DISPLAY
+// ─────────────────────────────────────────────────────────────────────────────
+G5 = "⑤ Test window & display"
+i_useDates = input.bool(false, "Limit the test to a date range", group = G5)
+i_from     = input.time(timestamp("01 Jan 2024 00:00 +0000"), "From", group = G5)
+i_to       = input.time(timestamp("01 Jan 2027 00:00 +0000"), "To",   group = G5)
+i_showLvls = input.bool(true, "Entry / stop / target lines", group = G5)
+i_showTbl  = input.bool(true, "Results panel", group = G5)
+
+
+// ═══════════════════════════════════════════════════════════════════════════════
+//  HELPERS
+// ═══════════════════════════════════════════════════════════════════════════════
+tick = syminfo.mintick
+pv   = syminfo.pointvalue == 0 ? 1.0 : syminfo.pointvalue
+px(v) => str.tostring(v, format.mintick)
+sessName(s) => s == 1 ? "Asia" : s == 2 ? "London" : s == 3 ? "New York" : "-"
+
+inWindow = not i_useDates or (time >= i_from and time <= i_to)
+
+
+// ═══════════════════════════════════════════════════════════════════════════════
+//  SESSION TRACKING                              (identical to the alert tool)
+// ═══════════════════════════════════════════════════════════════════════════════
+inAsia = not na(time(timeframe.period, i_asia,   i_tz))
+inLon  = not na(time(timeframe.period, i_london, i_tz))
+inNY   = not na(time(timeframe.period, i_ny,     i_tz))
+sessNow = inNY ? 3 : inLon ? 2 : inAsia ? 1 : 0
+
+var int   curSess  = 0
+var float sessHi   = na
+var float sessLo   = na
+var box   sessBox  = na
+var array<box> boxes = array.new<box>()
+var float prevHi   = na
+var float prevLo   = na
+var int   prevSess = 0
+
+var int   bias    = 0
+var bool  swept   = false
+var int   mss     = 0
+var float legHi   = na
+var float legLo   = na
+var float eEntry  = na
+var float eStop   = na
+var float eTarget = na
+var bool  armed   = false
+var int   setups  = 0
+
+sessionChanged = sessNow != curSess
+
+if sessionChanged
+    if curSess != 0 and not na(sessHi)
+        prevHi   := sessHi
+        prevLo   := sessLo
+        prevSess := curSess
+    curSess := sessNow
+    setups  := 0
+    sessHi  := sessNow != 0 ? high : na
+    sessLo  := sessNow != 0 ? low  : na
+    if sessNow != 0 and i_showBox
+        c = sessNow == 1 ? color.orange : sessNow == 2 ? color.blue : color.purple
+        sessBox := box.new(bar_index, high, bar_index + 1, low,
+             border_color = color.new(c, 45), bgcolor = color.new(c, 93), border_width = 1)
+        array.push(boxes, sessBox)
+        if array.size(boxes) > i_keepBox
+            box.delete(array.shift(boxes))
+else if sessNow != 0
+    sessHi := math.max(nz(sessHi, high), high)
+    sessLo := math.min(nz(sessLo, low),  low)
+    if not na(sessBox)
+        box.set_top(sessBox, sessHi)
+        box.set_bottom(sessBox, sessLo)
+        box.set_right(sessBox, bar_index + 1)
+
+// a Pine function cannot assign to globals, so the reset is inlined
+if sessionChanged
+    bias    := 0
+    swept   := false
+    mss     := 0
+    legHi   := na
+    legLo   := na
+    eEntry  := na
+    eStop   := na
+    eTarget := na
+    armed   := false
+
+sessionEnabled = (sessNow == 1 and i_useAsia) or (sessNow == 2 and i_useLon) or (sessNow == 3 and i_useNY)
+
+
+// ═══════════════════════════════════════════════════════════════════════════════
+//  FRACTALS
+// ═══════════════════════════════════════════════════════════════════════════════
+fh = ta.pivothigh(high, i_fractal, i_fractal)
+fl = ta.pivotlow(low,  i_fractal, i_fractal)
+
+var float lastFH = na
+var float lastFL = na
+var float minSinceFH = na
+var float maxSinceFL = na
+
+if not na(fh)
+    lastFH     := fh
+    minSinceFH := ta.lowest(low, i_fractal + 1)
+else
+    minSinceFH := math.min(nz(minSinceFH, low), low)
+
+if not na(fl)
+    lastFL     := fl
+    maxSinceFL := ta.highest(high, i_fractal + 1)
+else
+    maxSinceFL := math.max(nz(maxSinceFL, high), high)
+
+
+// ═══════════════════════════════════════════════════════════════════════════════
+//  STEP 1 - the sweep
+// ═══════════════════════════════════════════════════════════════════════════════
+if sessNow != 0 and sessionEnabled and not swept and not na(prevHi) and not na(prevLo)
+    hitHi = high > prevHi
+    hitLo = low  < prevLo
+    if hitHi or hitLo
+        // one bar taking both sides hides which went first; a down-closing bar most
+        // likely ran the high before reversing, and vice versa
+        bias  := hitHi and hitLo ? (close < open ? -1 : 1) : hitHi ? -1 : 1
+        swept := true
+
+
+// ═══════════════════════════════════════════════════════════════════════════════
+//  STEP 2 - the market structure shift (body close through the last fractal)
+// ═══════════════════════════════════════════════════════════════════════════════
+brokeDown = not na(lastFL) and (i_bodyClose ? close < lastFL : low  < lastFL)
+brokeUp   = not na(lastFH) and (i_bodyClose ? close > lastFH : high > lastFH)
+
+inPos = strategy.position_size != 0
+
+if swept and mss == 0 and setups < i_maxSetup and sessNow != 0 and not inPos
+    if bias == -1 and brokeDown
+        mss   := -1
+        legHi := nz(lastFH, high)
+        legLo := nz(minSinceFH, low)
+    else if bias == 1 and brokeUp
+        mss   := 1
+        legLo := nz(lastFL, low)
+        legHi := nz(maxSinceFL, high)
+
+
+// ═══════════════════════════════════════════════════════════════════════════════
+//  STEP 3 - the fib
+// ═══════════════════════════════════════════════════════════════════════════════
+if mss != 0 and not inPos
+    if i_extendLeg
+        if mss == -1
+            legLo := math.min(legLo, low)
+        else
+            legHi := math.max(legHi, high)
+
+    rng = legHi - legLo
+    if rng > 0
+        eEntry  := mss == -1 ? legLo + i_fib * rng : legHi - i_fib * rng
+        eStop   := mss == -1 ? legHi + i_slBufT * tick : legLo - i_slBufT * tick
+        risk    = math.abs(eStop - eEntry)
+        eTarget := mss == -1 ? eEntry - i_rr * risk : eEntry + i_rr * risk
+        armed   := true
+
+// invalidation: price trades back through the origin of the leg
+bool cancelled = false
+if armed and not inPos
+    if mss == -1 ? high > legHi + i_slBufT * tick : low < legLo - i_slBufT * tick
+        cancelled := true
+
+
+// ═══════════════════════════════════════════════════════════════════════════════
+//  SIZING
+// ═══════════════════════════════════════════════════════════════════════════════
+riskCash = i_riskMode == "Fixed cash" ? i_riskCash : strategy.equity * i_riskPct / 100.0
+
+f_qty(stopDist) =>
+    raw     = stopDist <= 0 ? 0.0 : riskCash / (stopDist * pv)
+    stepped = math.floor(raw / i_qtyStep) * i_qtyStep
+    stepped < i_minQty ? (i_skipSmall ? 0.0 : i_minQty) : stepped
+
+plQty = armed and not na(eEntry) ? f_qty(math.abs(eEntry - eStop)) : 0.0
+
+
+// ═══════════════════════════════════════════════════════════════════════════════
+//  ORDERS
+// ═══════════════════════════════════════════════════════════════════════════════
+var float pEntry = na
+var float pStop  = na
+var float pTgt   = na
+var float pRisk  = na
+var int   pSess  = 0
+var int   pDir   = 0
+
+if not inPos
+    // cancel and re-issue every bar, so an extending leg drags the resting limit
+    // with it - the backtest equivalent of the LEVEL MOVED alert
+    strategy.cancel("L")
+    strategy.cancel("S")
+    canTrade = armed and not cancelled and inWindow and sessionEnabled and plQty > 0
+    // it has to be a pullback entry: price still on the far side of the level
+    pullback = mss == -1 ? close < eEntry : close > eEntry
+    if canTrade and pullback
+        if mss == 1
+            strategy.entry("L", strategy.long, qty = plQty, limit = eEntry, comment = "0.618")
+        else
+            strategy.entry("S", strategy.short, qty = plQty, limit = eEntry, comment = "0.618")
+
+justFilled = strategy.position_size != 0 and strategy.position_size[1] == 0
+if justFilled
+    pDir   := strategy.position_size > 0 ? 1 : -1
+    pEntry := strategy.position_avg_price
+    pStop  := eStop
+    // target recomputed from the ACTUAL fill so the R multiple stays true
+    r       = math.max(math.abs(pEntry - nz(pStop, pEntry)), tick)
+    pTgt   := pDir == 1 ? pEntry + i_rr * r : pEntry - i_rr * r
+    pRisk  := r * math.abs(strategy.position_size) * pv
+    pSess  := curSess
+    setups += 1
+
+if inPos
+    if na(pStop)
+        strategy.close_all(comment = "No stop")
+    else if i_flatEOS and sessionChanged
+        strategy.close_all(comment = "Session end")
+    else
+        strategy.exit("X", from_entry = pDir == 1 ? "L" : "S", limit = pTgt, stop = pStop,
+             comment_profit = str.tostring(i_rr, "#.#") + "R", comment_loss = "-1R")
+
+
+// ═══════════════════════════════════════════════════════════════════════════════
+//  RESULTS BOOKKEEPING
+// ═══════════════════════════════════════════════════════════════════════════════
+var array<int>   sTrades = array.new<int>(4, 0)
+var array<int>   sWins   = array.new<int>(4, 0)
+var array<float> sR      = array.new<float>(4, 0.0)
+var int   lossStreak = 0
+var int   maxStreak  = 0
+
+if strategy.closedtrades > nz(strategy.closedtrades[1], 0)
+    for k = nz(strategy.closedtrades[1], 0) to strategy.closedtrades - 1
+        p  = strategy.closedtrades.profit(k)
+        r  = nz(pRisk, 0) > 0 ? p / pRisk : 0.0
+        ix = pSess >= 1 and pSess <= 3 ? pSess : 0
+        array.set(sTrades, ix, array.get(sTrades, ix) + 1)
+        array.set(sR, ix, array.get(sR, ix) + r)
+        if p > 0
+            array.set(sWins, ix, array.get(sWins, ix) + 1)
+            lossStreak := 0
+        else
+            lossStreak += 1
+            maxStreak  := math.max(maxStreak, lossStreak)
+
+// end-of-bar reset, after the orders above have read intact state
+if cancelled
+    bias    := 0
+    swept   := false
+    mss     := 0
+    legHi   := na
+    legLo   := na
+    eEntry  := na
+    eStop   := na
+    eTarget := na
+    armed   := false
+if justFilled
+    mss     := 0
+    armed   := false
+
+
+// ═══════════════════════════════════════════════════════════════════════════════
+//  DISPLAY
+// ═══════════════════════════════════════════════════════════════════════════════
+live = armed and not inPos and not na(eEntry)
+plot(i_showLvls and live ? eEntry : na, "Armed 0.618", color.new(color.orange, 40), 1, plot.style_linebr)
+plot(i_showLvls and inPos ? pEntry : na, "Entry",  color.new(color.orange, 0), 2, plot.style_linebr)
+plot(i_showLvls and inPos ? pStop  : na, "Stop",   color.new(color.red, 0),    1, plot.style_linebr)
+plot(i_showLvls and inPos ? pTgt   : na, "Target", color.new(color.green, 0),  1, plot.style_linebr)
+plot(sessNow != 0 and not na(prevHi) ? prevHi : na, "Prev high", color.new(color.gray, 40), 1, plot.style_linebr)
+plot(sessNow != 0 and not na(prevLo) ? prevLo : na, "Prev low",  color.new(color.gray, 40), 1, plot.style_linebr)
+
+var table tb = table.new(position.top_right, 5, 9, bgcolor = color.new(color.black, 15),
+     border_color = color.new(color.gray, 60), border_width = 1,
+     frame_color = color.new(color.gray, 40), frame_width = 1)
+
+f_cell(col, row, txt, c, bold) =>
+    table.cell(tb, col, row, txt, text_color = c, text_size = size.tiny,
+         text_halign = col == 0 ? text.align_left : text.align_right,
+         bgcolor = bold ? color.new(color.gray, 80) : color.new(color.black, 100))
+
+if i_showTbl and barstate.islast
+    beWr = 100.0 / (1.0 + i_rr)
+
+    f_cell(0, 0, "SESSION",  color.white, true)
+    f_cell(1, 0, "TRADES",   color.white, true)
+    f_cell(2, 0, "WINS",     color.white, true)
+    f_cell(3, 0, "WIN%",     color.white, true)
+    f_cell(4, 0, "R",        color.white, true)
+
+    int   totT = 0
+    int   totW = 0
+    float totR = 0.0
+    for s = 1 to 3
+        t = array.get(sTrades, s)
+        w = array.get(sWins, s)
+        rr = array.get(sR, s)
+        totT += t
+        totW += w
+        totR += rr
+        wr = t > 0 ? 100.0 * w / t : 0.0
+        f_cell(0, s, sessName(s), color.new(color.silver, 0), false)
+        f_cell(1, s, str.tostring(t), color.new(color.silver, 0), false)
+        f_cell(2, s, str.tostring(w), color.new(color.silver, 0), false)
+        f_cell(3, s, t > 0 ? str.tostring(wr, "#.#") + "%" : "-",
+             t == 0 ? color.new(color.gray, 0) : wr >= beWr ? color.new(color.lime, 0) : color.new(color.orange, 0))
+        f_cell(4, s, str.tostring(rr, "#.#") + "R",
+             rr >= 0 ? color.new(color.lime, 0) : color.new(color.red, 0))
+
+    totWr = totT > 0 ? 100.0 * totW / totT : 0.0
+    f_cell(0, 4, "TOTAL", color.white, true)
+    f_cell(1, 4, str.tostring(totT), color.white, true)
+    f_cell(2, 4, str.tostring(totW), color.white, true)
+    f_cell(3, 4, totT > 0 ? str.tostring(totWr, "#.#") + "%" : "-",
+         totWr >= beWr ? color.new(color.lime, 0) : color.new(color.orange, 0), true)
+    f_cell(4, 4, str.tostring(totR, "#.#") + "R",
+         totR >= 0 ? color.new(color.lime, 0) : color.new(color.red, 0), true)
+
+    f_cell(0, 5, "break-even win rate", color.new(color.silver, 0), false)
+    f_cell(4, 5, str.tostring(beWr, "#.#") + "%", color.new(color.aqua, 0), false)
+    f_cell(0, 6, "expectancy per trade", color.new(color.silver, 0), false)
+    f_cell(4, 6, totT > 0 ? str.tostring(totR / totT, "#.##") + "R" : "-",
+         totT > 0 and totR >= 0 ? color.new(color.lime, 0) : color.new(color.red, 0), false)
+    f_cell(0, 7, "worst losing streak", color.new(color.silver, 0), false)
+    f_cell(4, 7, str.tostring(maxStreak), color.new(color.silver, 0), false)
+    f_cell(0, 8, "costs set in Properties?", color.new(color.silver, 0), false)
+    f_cell(4, 8, "CHECK", color.new(color.yellow, 0), false)

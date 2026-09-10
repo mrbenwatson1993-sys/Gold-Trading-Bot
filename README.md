@@ -5,6 +5,7 @@ Two mechanical trading models from YouTube, implemented in Pine Script v6.
 | File | What it is | Use it for |
 |---|---|---|
 | `indicator/session_sweep_mss_618.pine` | **Session sweep → MSS → 0.618 alerts** | **Alerts you act on manually** |
+| `strategy/session_sweep_mss_618_backtest.pine` | The same model, backtestable | Checking the edge before you trade it |
 | `strategy/percoco_50_morning_model.pine` | Percoco 15m FVG → 1m CHoCH model | Backtesting, auto-execution |
 
 ---
@@ -17,7 +18,8 @@ watches the chart and sends you a ticket with the entry, stop and target so you 
 the order yourself.
 
 **Setup guide: [docs/ALERTS.md](docs/ALERTS.md)** — read this one, it's the whole
-workflow.
+workflow. **[docs/BACKTESTING.md](docs/BACKTESTING.md)** covers the backtest twin,
+which shares the detection logic line for line and breaks results down per session.
 
 ### The three steps
 
