@@ -30,6 +30,83 @@ class Swing:
         return self.kind == HIGH
 
 
+def find_swings_prominent(candles: list[Candle], atr: list[float],
+                          strength: int = 3, min_prominence_atr: float = 1.0,
+                          window: int = 20) -> list[Swing]:
+    """Swings a person would actually mark, rather than every N-bar pivot.
+
+    A fixed-strength pivot counts any bar with `strength` lower bars either
+    side, which in a trend is most of them. What makes a swing worth drawing a
+    line through is not how many bars surround it but how far price had to
+    retrace to make it -- its prominence.
+
+    Prominence here is the smaller of the two drops away from the pivot within
+    `window` bars on each side, measured in ATR. A high that price fell 2 ATR
+    away from on both sides is structure; one it drifted 0.2 ATR from is not.
+
+    Confirmation is delayed by the full window, since the right-hand side of
+    the prominence cannot be known until those bars exist.
+    """
+    out: list[Swing] = []
+    n = len(candles)
+    for i in range(strength, n - strength):
+        c = candles[i]
+        a = atr[i] if i < len(atr) else 0.0
+        if a <= 0:
+            continue
+        confirmed = min(n - 1, i + max(strength, window))
+
+        is_high = (all(c.high >= b.high for b in candles[i - strength:i])
+                   and all(c.high > b.high for b in candles[i + 1:i + 1 + strength]))
+        is_low = (all(c.low <= b.low for b in candles[i - strength:i])
+                  and all(c.low < b.low for b in candles[i + 1:i + 1 + strength]))
+
+        if is_high:
+            # Walk out each way until price exceeds this high; the deepest
+            # low reached before that is the trough on that side. Prominence
+            # is the shallower of the two drops -- how far price actually had
+            # to give up to make this peak stand out.
+            right = _trough(candles, i, +1, window, c.high, True)
+            left = _trough(candles, i, -1, window, c.high, True)
+            if right is not None and left is not None:
+                if (c.high - max(left, right)) / a >= min_prominence_atr:
+                    out.append(Swing(i, c.ts, c.high, HIGH, confirmed))
+
+        if is_low:
+            right = _trough(candles, i, +1, window, c.low, False)
+            left = _trough(candles, i, -1, window, c.low, False)
+            if right is not None and left is not None:
+                if (min(left, right) - c.low) / a >= min_prominence_atr:
+                    out.append(Swing(i, c.ts, c.low, LOW, confirmed))
+
+    out.sort(key=lambda s: (s.index, s.kind))
+    return out
+
+
+def _trough(candles: list[Candle], i: int, step: int, window: int,
+            level: float, for_high: bool):
+    """Deepest retracement away from bar i before price passes `level` again.
+
+    Returns None when price never exceeds the level inside the window, which
+    means the pivot's prominence is not yet established either way.
+    """
+    extreme = None
+    j = i + step
+    end = i + step * window
+    while (j <= end if step > 0 else j >= end) and 0 <= j < len(candles):
+        c = candles[j]
+        if for_high:
+            if c.high > level:
+                break
+            extreme = c.low if extreme is None else min(extreme, c.low)
+        else:
+            if c.low < level:
+                break
+            extreme = c.high if extreme is None else max(extreme, c.high)
+        j += step
+    return extreme
+
+
 def find_swings(candles: list[Candle], strength: int = 3) -> list[Swing]:
     """Fractal pivots: an extreme with `strength` lower bars on either side.
 

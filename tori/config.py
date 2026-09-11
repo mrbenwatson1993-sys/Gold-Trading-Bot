@@ -21,6 +21,15 @@ from dataclasses import dataclass, field, replace
 class StrategyConfig:
     # --- swing detection -------------------------------------------------
     swing_strength: int = 3          # bars required either side of a pivot
+    # A pivot only counts as structure if price retraced this far away from it
+    # on both sides, in ATR. 0 disables it and falls back to fixed-strength
+    # pivots, which in a trend mark almost every bar.
+    min_prominence_atr: float = 0.0
+    prominence_window: int = 20
+    # Refit the line through every touch by least squares instead of threading
+    # it exactly through two anchors. A hand-drawn line splits the difference
+    # between its touches; an anchor-threaded one is pinned to two of them.
+    refit_line: bool = False
     atr_period: int = 14
 
     # --- trendline construction ------------------------------------------

@@ -29,7 +29,9 @@ from .config import StrategyConfig, grade_at_least
 from .levels import Level, clean_space, find_levels
 from .quality import Grade, grade_setup
 from .structure import Structure, classify
-from .swings import HIGH, LOW, Swing, find_swings, last_swing_before, visible_swings
+from .swings import (HIGH, LOW, Swing, find_swings,
+                     find_swings_prominent, last_swing_before,
+                     visible_swings)
 from .trendlines import BEARISH, BULLISH, Trendline, build_trendlines, near_price
 
 
@@ -151,7 +153,12 @@ class ToriStrategy:
         self.candles = candles
         self.atr = atr
         self.cfg = cfg
-        self.swings = find_swings(candles, cfg.swing_strength)
+        if cfg.min_prominence_atr > 0:
+            self.swings = find_swings_prominent(
+                candles, atr, cfg.swing_strength, cfg.min_prominence_atr,
+                cfg.prominence_window)
+        else:
+            self.swings = find_swings(candles, cfg.swing_strength)
         # Structure for the Safety Line is read at its own, usually coarser,
         # strength so the line follows real pullbacks rather than noise.
         strength = cfg.safety_swing_strength or cfg.swing_strength

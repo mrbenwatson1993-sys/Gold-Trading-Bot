@@ -205,9 +205,53 @@ def _try_line(candles, pool, atr, cfg, kind, a: Swing, b: Swing,
     if line.net_move_atr < cfg.min_trend_atr:
         return None
 
+    if cfg.refit_line and len(touches) >= 3:
+        _refit(line, touches, candles, kind, cfg, atr_ref, through)
+
     devs = [abs(s.price - line.value_at(s.index)) for s in touches]
     line.rms_dev_atr = (sum(d * d for d in devs) / len(devs)) ** 0.5 / atr_ref
     return line
+
+
+def _refit(line: Trendline, touches: list[Swing], candles, kind: str,
+           cfg: StrategyConfig, atr_ref: float, through: int) -> None:
+    """Re-fit the line by least squares through all of its touches.
+
+    Threading a line exactly through two anchors pins it to whichever two
+    happened to be chosen; a line drawn by hand splits the difference between
+    every point it passes. The refit is kept only if the result still holds --
+    it must not put price on the wrong side of the line at any point it was
+    respecting before, or the "line" is now cutting through the structure it
+    was drawn from.
+    """
+    n = len(touches)
+    xs = [t.index for t in touches]
+    ys = [t.price for t in touches]
+    mx = sum(xs) / n
+    my = sum(ys) / n
+    denom = sum((x - mx) ** 2 for x in xs)
+    if denom <= 0:
+        return
+    slope = sum((x - mx) * (y - my) for x, y in zip(xs, ys)) / denom
+    if (slope >= 0) if kind == BEARISH else (slope <= 0):
+        return
+    intercept = my - slope * mx
+
+    old_anchor, old_price, old_slope = (line.anchor_index, line.anchor_price,
+                                        line.slope)
+    line.anchor_index = int(mx)
+    line.anchor_price = intercept + slope * int(mx)
+    line.slope = slope
+
+    close_tol = cfg.max_close_violation_atr * atr_ref
+    for j in range(touches[0].index, through + 1):
+        level = line.value_at(j)
+        bad = (candles[j].close > level + close_tol if kind == BEARISH
+               else candles[j].close < level - close_tol)
+        if bad:      # refit broke the line; keep the anchored version
+            line.anchor_index, line.anchor_price, line.slope = (
+                old_anchor, old_price, old_slope)
+            return
 
 
 def _space_out(swings: list[Swing], min_gap: int) -> list[Swing]:

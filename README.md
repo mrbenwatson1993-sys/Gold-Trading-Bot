@@ -407,9 +407,17 @@ leaves only what the trendline break itself contributes
 | BRENT | −0.168 | −1.20 | −0.040 | −0.128 |
 | EURUSD | −0.129 | −1.26 | +0.034 | −0.163 |
 
-**On the S&P a random bar pays as well as a trendline break.** The apparent
-+0.404 edge is entirely drift -- the control is larger than the signal. Same
-for the NASDAQ, Brent and EURUSD, where the break adds nothing or less.
+On the S&P, NASDAQ, Brent and EURUSD the break adds little or nothing that a
+random entry does not.
+
+**A correction to an earlier version of this table.** The control was first
+estimated from a single random draw the same size as the break sample, which
+is as noisy as the thing it is measuring: changing the seed moved the S&P
+control from +0.439 to +0.100, which was enough to flip the conclusion. It was
+briefly written here that "a random bar pays as well as a trendline break on
+the S&P" -- that overstated it. Averaged over 25 resamples the S&P break adds
++0.271, which is positive but not significant (t = 1.38). The ranking survives;
+the dramatic version of it did not.
 
 Only the metals show the break contributing something a random entry does not,
 and only silver clears statistical significance on its own (t = 4.21); gold is
@@ -429,6 +437,48 @@ mechanical one does not. What can be said is that the rules as written here do
 not transfer, and that two markets out of nine -- one of them only marginally
 significant -- is also what "no edge anywhere, and gold and silver got lucky"
 would look like.
+
+### Does a better detector recover the signal? Mostly no.
+
+Fixed-strength swing pivots are a crude proxy for what a person draws -- in a
+trend they mark nearly every bar. Two upgrades were tested (`analysis/detector.py`):
+*prominence*, where a pivot only counts if price retraced that far from it
+before making a higher high, and *refit*, where the line is least-squares
+fitted through all its touches instead of pinned to two anchors.
+
+| market | detector | breaks | break adds | t |
+|---|---|---|---|---|
+| S&P | fixed | 760 | +0.271 | 1.38 |
+| S&P | prominence 1.5 | 131 | +1.108 | 1.91 |
+| **S&P** | **prominence 3.0** | 50 | **+2.681** | **2.52** |
+| S&P | prom 3 + refit | 40 | +2.368 | 2.00 |
+| NASDAQ | fixed | 827 | +0.183 | 0.98 |
+| NASDAQ | prominence 3.0 | 62 | **−0.434** | −0.67 |
+| BRENT | fixed | 1022 | −0.156 | −1.09 |
+| BRENT | prominence 3.0 | 92 | **−0.443** | −0.98 |
+| EURUSD | prominence 3.0 | 99 | −0.149 | −0.34 |
+
+On the S&P selectivity transforms the result -- a tenfold larger edge, rising
+monotonically with the threshold, and significant at the strictest setting.
+On the NASDAQ and Brent the identical change makes things **worse**. One
+promising cell out of twenty-four, contradicted by its nearest neighbours, is
+what chance produces; the dose-response on the S&P keeps it interesting but
+it is not a result.
+
+### What has never been tested: drawing the lines from the monthly down
+
+The method is described top-down -- draw on the monthly, refine through weekly
+and daily, trade the 4H. **The backtests have never done this.** `mtf.py`
+builds that ladder and projects every timeframe's lines into one price/time
+space, but it is wired only into the `scan` command; the trading path calls
+`build_trendlines` on the trading timeframe alone. Every result in this README
+was produced by lines fitted to the traded chart's own swings.
+
+That is not a small omission. The one detector change that produced a real
+signal was the one that made lines *rarer and more significant* -- 760 breaks
+down to 50. Deriving lines from monthly and weekly structure is a principled
+way to get that selectivity rather than a tuned threshold, and it is what the
+method actually prescribes. It remains the most promising untested avenue.
 
 ### What still helps everywhere
 
