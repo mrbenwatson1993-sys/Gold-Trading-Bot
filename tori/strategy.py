@@ -99,10 +99,8 @@ class Position:
         That line is the Action Line for the trade in the other direction --
         the same break, read from the other side.
         """
-        if reason == "safety line" and self.safety_line is not None:
-            return self.safety_line
-        if reason in ("hard stop", "stop (close)") and self.safety_line is not None:
-            # the resting stop rides the Safety Line, so it is that line
+        if reason in ("safety line", "stop", "stop (wicked)",
+                      "hard stop") and self.safety_line is not None:
             return self.safety_line
         return self.action_line
 
@@ -486,18 +484,29 @@ class ToriStrategy:
                 gapped = (c.open < pos.hard_stop) if pos.is_long else (c.open > pos.hard_stop)
                 return (c.open if gapped else c.close), "stop (close)"
         else:
-            if pos.is_long and c.low <= pos.hard_stop:
-                return min(pos.hard_stop, c.open), "hard stop"
-            if not pos.is_long and c.high >= pos.hard_stop:
-                return max(pos.hard_stop, c.open), "hard stop"
+            hit = (c.low <= pos.hard_stop) if pos.is_long else (c.high >= pos.hard_stop)
+            if hit:
+                fill = (min(pos.hard_stop, c.open) if pos.is_long
+                        else max(pos.hard_stop, c.open))
+                return fill, ("stop (wicked)" if self._wicked_out(pos, c, i)
+                              else "stop")
 
         self.update_safety_line(pos, i)
+
+        # There is no second line to close through. The stop sits just on the
+        # far side of the trendline and follows price; price crossing back
+        # through the line runs into it, and that is the exit.
+        if self.cfg.exit_on_stop_only:
+            self._advance_stop(pos, i)
+            best = c.high if pos.is_long else c.low
+            worst = c.low if pos.is_long else c.high
+            pos.mfe_r = max(pos.mfe_r, pos.r_multiple(best))
+            pos.mae_r = min(pos.mae_r, pos.r_multiple(worst))
+            return None
+
         buffer = self.cfg.safety_buffer_atr * self.atr[i]
         safety = pos.safety_value(i)
         if safety is not None:
-            # The opposing trendline, extended. Price breaking back through it
-            # is the whole exit rule -- there is no target, so this is the only
-            # thing that ends a winning trade.
             if pos.is_long and c.close < safety - buffer:
                 return c.close, "safety line"
             if not pos.is_long and c.close > safety + buffer:
@@ -523,6 +532,19 @@ class ToriStrategy:
         pos.mfe_r = max(pos.mfe_r, pos.r_multiple(best))
         pos.mae_r = min(pos.mae_r, pos.r_multiple(worst))
         return None
+
+    def _wicked_out(self, pos: Position, candle: Candle, i: int) -> bool:
+        """Was the stop taken by a wick that the candle then closed back over?
+
+        The stop sits close to the line so that crossing the line ends the
+        trade. The cost of being close is being taken out by a spike while the
+        candle itself settles back on the correct side -- structure never
+        actually broke, and the trade was ended by noise. Counting these is
+        the only way to price how close the stop can afford to sit.
+        """
+        line = pos.safety_line or pos.action_line
+        level = line.value_at(i)
+        return (candle.close > level) if pos.is_long else (candle.close < level)
 
     def _advance_stop(self, pos: Position, i: int) -> None:
         """Move the stop to where the Safety Line sits on the next bar.

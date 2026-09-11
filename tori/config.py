@@ -76,6 +76,12 @@ class StrategyConfig:
     # winner can breathe. "recent" re-anchors to the last two swings instead,
     # which produces a much steeper line that cuts trends short.
     safety_anchor: str = "origin"
+    # There is no second trendline. There is the line price broke -- fixed,
+    # never redrawn -- and a stop on the other side of it that follows price
+    # as a safety net. The stop being hit IS the exit; nothing else closes a
+    # trade. Setting this False restores the older two-line model where a
+    # close back through an opposing line also exits.
+    exit_on_stop_only: bool = True
     # A line, once drawn, does not move. The Action Line is fixed at the break
     # and only extended; with this False the Safety Line behaves the same way
     # -- drawn once from the new structure and then left alone. Redrawing it

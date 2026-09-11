@@ -358,6 +358,58 @@ on 4H the filter improves *every* touch bucket and *both* regimes, which a pure
 fluke would not do. That is a hypothesis worth testing properly on real GC
 futures over a decade — not a result.
 
+## One line, one stop -- and how close the stop can sit
+
+The model, as the method actually works:
+
+  * There is **no second trendline**. There is the line price broke -- fixed at
+    the break and only extended, never redrawn -- and price is above it or
+    below it.
+  * The **stop follows price on the far side of that line**, close enough that
+    price crossing back through the line runs straight into it.
+  * The stop being hit **is** the exit. Nothing else closes a trade: no target,
+    no separate line to close through.
+  * Risk is fixed on entry and the stop only ever moves in the trade's favour,
+    so a trade cannot lose more than it was sized for.
+
+(The green line labelled "safety line" on a chart of this is the trailing stop
+drawn as it follows price, not a second trendline.)
+
+With that in place, holds go to ~50 bars -- eight days on a 4H chart -- which
+is the timescale the method is described at, rather than the 9 bars the older
+two-line version produced.
+
+### The cost of a close stop, measured
+
+"wick%" is the share of exits where the stop was hit intrabar **and that same
+candle closed back on the correct side of the line** -- structure never broke,
+the trade was ended by a spike. `analysis/stop_distance.py`.
+
+| stop distance | trades | hold | **wick%** | expectancy | PF | return | max DD |
+|---|---|---|---|---|---|---|---|
+| 0.05 ATR | 477 | 48.0 | **40.5%** | +0.169R | 1.16 | +60.0% | 28.4% |
+| 0.10 ATR | 476 | 48.2 | 38.7% | +0.153R | 1.14 | +54.0% | 29.4% |
+| 0.25 ATR | 453 | 50.5 | 32.9% | +0.240R | 1.27 | +105.7% | 27.0% |
+| **0.50 ATR** | 444 | 51.2 | 28.2% | **+0.259R** | **1.30** | **+114.1%** | 22.7% |
+| 0.75 ATR | 433 | 52.5 | 24.2% | +0.255R | 1.30 | +106.0% | **21.6%** |
+| 1.00 ATR | 426 | 53.3 | 23.2% | +0.224R | 1.27 | +83.3% | 25.5% |
+| 1.50 ATR | 410 | 55.5 | 23.2% | +0.190R | 1.24 | +80.5% | 23.9% |
+
+**Getting wicked out is expensive and unavoidable.** At the tightest setting
+two exits in five are noise. Widening the stop cuts that to roughly one in
+four and nearly doubles the return, but it never goes away -- past 0.75 ATR
+the wick rate stops falling while returns decline, because the stop is now so
+far from the line that it gives back real profit on the exits that *are*
+genuine.
+
+The sweet spot on gold is 0.50-0.75 ATR: +0.259R at PF 1.30 with 22.7%
+drawdown, against +0.169R at PF 1.16 for a stop hugging the line.
+
+Silver agrees on the wick rate (41.9% down to 27.0%) but **not** on the sweet
+spot -- it prefers the tight end (+0.115R at 0.10 ATR) and goes negative at
+0.50. So the wick-out *effect* replicates; the optimal distance does not, and
+should be treated as per-market rather than a constant.
+
 ## Does it work on other markets? Metals yes, everything else no.
 
 A claim about trendlines should not care what the symbol is. Same engine,
