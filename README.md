@@ -14,6 +14,40 @@ There is **no profit target**. The only fixed quantity in the system is the
 initial risk; the reward is whatever price hands you before it breaks back
 through the opposing line. Price decides the entry and price decides the exit.
 
+## Forward test on data that did not exist when this was built
+
+Every series above ends **2023-09-11**. Tokenised gold (XAUT) runs to today,
+so everything from 2023-09-12 onward was never seen by the parameter search,
+the market selection, or any choice recorded in this README.
+
+The engine runs over the whole series so lines form from earlier structure,
+exactly as it would live; only trades *entered* after the cutoff are scored.
+`analysis/forward_test.py`.
+
+| window | trades | /mo | win% | RR | best | expectancy | PF | net on $250k |
+|---|---|---|---|---|---|---|---|---|
+| XAUT, all 4.1y | 56 | 1.1 | 33.9% | 4.18 | +20.3R | +0.543R | 2.07 | +$66,748 |
+| XAUT, seen (to 2023-09) | 10 | 0.8 | 50.0% | 2.63 | +5.1R | +0.637R | 2.56 | +$14,697 |
+| **XAUT, UNSEEN (3.0y)** | **46** | 1.3 | 30.4% | **4.72** | **+20.3R** | **+0.522R** | **1.99** | **+$52,051** |
+| **PAXG, unseen (1.5y)** | **14** | 0.4 | 21.4% | **10.49** | +17.8R | **+0.967R** | **2.68** | **+$27,025** |
+
+Two independently sourced gold tokens, correlating at 0.9829 on bar returns,
+both showing PF around 2 on data that postdates the whole project. The unseen
+expectancy (+0.522R) is *higher* than anything measured in sample, where 4H
+gold ran PF 1.38.
+
+**This contradicts the "edge is weakening" conclusion drawn earlier.** The
+2017-2023 stretch was genuinely weak -- gold ran PF 0.98 there -- but the
+three years since have been the strongest period measured. A weak patch, not a
+decay.
+
+**What to hold against it.** Forty-six trades is a small sample, and gold rose
++126.8% over that window, so the method was tested in exactly the conditions a
+trend system should suit. It did not beat buy-and-hold on raw return
+(+20.8% at 1% risk against +126.8%), but it did so at a fraction of the risk
+-- gold itself drew down 31.6% over the same period. And tokenised gold is
+still a proxy, though two separate ones now agree.
+
 ## More markets, not a faster chart
 
 Four to seven trades a month on multi-day holds forces the risk per trade up
