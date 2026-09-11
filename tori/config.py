@@ -70,6 +70,12 @@ class StrategyConfig:
     # winner can breathe. "recent" re-anchors to the last two swings instead,
     # which produces a much steeper line that cuts trends short.
     safety_anchor: str = "origin"
+    # The stop is dynamic: it rides the Safety Line, moving up every bar for a
+    # long (down for a short) because the line itself slopes. It never moves
+    # against the trade. Set False to step it only at confirmed swing pivots,
+    # which leaves it much further from price between swings.
+    stop_follows_safety: bool = True
+    trail_buffer_atr: float = 0.25   # how far under the line the stop rests
 
     # --- grading ----------------------------------------------------------
     min_grade: str = "F"             # "F" = ungated: grade reports, never blocks

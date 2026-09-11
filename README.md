@@ -133,6 +133,40 @@ Two deliberate departures, both documented in code:
   print — is an unbounded loss on leveraged futures. The Safety Line decides
   when the trend is over; the resting stop only decides how bad a gap may get.
 
+### The stop trails the line
+
+The Safety Line slopes, so the stop rides *along* it and moves every bar,
+rather than stepping only when a new swing confirms. Measured three ways:
+
+| timeframe | stepped at pivots | trailing the line |
+|---|---|---|
+| 4H (106/108 trades) | +0.226R, PF 1.62, 5.7% DD | **+0.266R, PF 1.80, 5.2% DD** |
+| 1H (168/171 trades) | +0.107R, PF 1.05, 9.6% DD | **+0.126R, PF 1.07, 9.3% DD** |
+| daily (9 trades) | +0.488R, PF 1.97 | **+0.641R, PF 2.42** |
+
+Better expectancy, better profit factor and *lower* drawdown in all three.
+It does not cut winners: average win barely moves (+1.32R to +1.28R on 4H)
+while win rate rises, so it is trimming losers rather than capping runners.
+
+**But read the exit mix before accepting it.** Trailing flips which rule
+actually closes trades:
+
+```
+stepped:   safety line 54%   failed break 25%   hard stop 22%
+trailing:  hard stop 60%     failed break 24%   safety line 16%
+```
+
+Because the stop now rests just under the line, price reaches it intrabar
+before a close can confirm. That quietly converts a close-based structural
+exit into an intrabar trailing stop — better numbers here, but no longer
+"let the close decide". `--step-stop` restores the original behaviour.
+
+The distance the stop rests under the line is a genuinely unstable parameter:
+0.25 ATR is best on 4H (+0.266R vs +0.247R at 0.10), while 0.10 ATR is best on
+1H (+0.202R vs +0.126R) and on daily. The optimum moves with the timeframe,
+which means it is fitting noise. It is left at 0.25 ATR everywhere rather than
+tuned per timeframe, and should be treated as arbitrary.
+
 ### The Safety Line anchor
 
 The single largest improvement in the build. Anchoring the line to the last two
@@ -211,6 +245,9 @@ bar, the two runs would disagree.
 - Strongly long-biased sample.
 - Commissions are placeholders; slippage is a flat tick assumption, and real
   fills around a break are worse than that.
+- The edge degrades on lower timeframes in this sample: profit factor 1.80 on
+  4H against 1.07 on 1H. Seven months of hourly data is not enough to conclude
+  much, but it is not encouraging for dropping down.
 - Intrabar order is unknowable; a bar that touches the stop is assumed to have
   stopped out even when it closed well beyond.
 - Nothing here is financial advice or a live trading system. It is a research

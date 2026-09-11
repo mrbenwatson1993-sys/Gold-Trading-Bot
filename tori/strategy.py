@@ -374,9 +374,34 @@ class ToriStrategy:
             if not pos.is_long and c.close > action + buffer:
                 return c.close, "failed break"
 
+        # Survived the bar: drag the stop along the line, ready for the next
+        # one. This happens last so the stop protecting bar i+1 is placed
+        # using nothing beyond bar i.
+        self._advance_stop(pos, i)
+
         # Track excursions for reporting.
         best = c.high if pos.is_long else c.low
         worst = c.low if pos.is_long else c.high
         pos.mfe_r = max(pos.mfe_r, pos.r_multiple(best))
         pos.mae_r = min(pos.mae_r, pos.r_multiple(worst))
         return None
+
+    def _advance_stop(self, pos: Position, i: int) -> None:
+        """Move the stop to where the Safety Line sits on the next bar.
+
+        The line slopes, so this moves every single bar rather than only when
+        a new swing confirms -- that is the difference between a stop trailing
+        the structure and one parked under an old low. It only ever moves in
+        the trade's favour.
+
+        Extrapolating the line one bar forward is not lookahead: the line is
+        fully determined by swings already confirmed at bar i, so where it will
+        sit at i+1 is known now. That is exactly how a resting order is placed.
+        """
+        if not self.cfg.stop_follows_safety or pos.safety_line is None:
+            return
+        buffer = self.cfg.trail_buffer_atr * self.atr[i]
+        nxt = pos.safety_line.value_at(i + 1)
+        candidate = nxt - buffer if pos.is_long else nxt + buffer
+        if (candidate > pos.hard_stop) if pos.is_long else (candidate < pos.hard_stop):
+            pos.hard_stop = candidate
