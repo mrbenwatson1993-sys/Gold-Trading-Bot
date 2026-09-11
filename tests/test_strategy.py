@@ -82,8 +82,8 @@ class TestStrategy(unittest.TestCase):
         result = run(self.candles, self.cfg,
                      RiskConfig(symbol="MGC", starting_equity=250_000))
         reasons = {t.exit_reason for t in result.trades}
-        self.assertTrue(reasons <= {"safety line", "hard stop", "failed break",
-                                    "open at end"}, reasons)
+        self.assertTrue(reasons <= {"safety line", "hard stop", "stop (close)",
+                                    "failed break", "open at end"}, reasons)
 
 
 class TestNoLookahead(unittest.TestCase):

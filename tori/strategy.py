@@ -101,7 +101,7 @@ class Position:
         """
         if reason == "safety line" and self.safety_line is not None:
             return self.safety_line
-        if reason == "hard stop" and self.safety_line is not None:
+        if reason in ("hard stop", "stop (close)") and self.safety_line is not None:
             # the resting stop rides the Safety Line, so it is that line
             return self.safety_line
         return self.action_line
@@ -401,6 +401,14 @@ class ToriStrategy:
         line = pos.broken_line(reason)
         direction = "short" if pos.is_long else "long"
 
+        # The touch rule has to govern the flip too, or it governs almost
+        # nothing: in always-in mode nearly every trade is a reversal, and a
+        # reversal simply adopts whatever line just broke. Failing the rule
+        # means close the position and stand aside rather than flip onto a
+        # line that was never tested enough to mean anything.
+        if not (self.cfg.min_touches <= line.touch_count <= self.cfg.max_touches):
+            return None
+
         # The point of the top-down read, applied to the flip. If every
         # timeframe above is bullish, the break of an ascending line is a
         # pullback starting, not a downtrend -- so close the long, but do not
@@ -448,10 +456,21 @@ class ToriStrategy:
         """
         c = self.candles[i]
 
-        if pos.is_long and c.low <= pos.hard_stop:
-            return min(pos.hard_stop, c.open), "hard stop"
-        if not pos.is_long and c.high >= pos.hard_stop:
-            return max(pos.hard_stop, c.open), "hard stop"
+        # The resting stop, as it stood before this bar opened.
+        # With stop_on_close_only the rule is that price must BREAK the line:
+        # a wick that pokes through and closes back inside has broken nothing,
+        # so only the close counts. Otherwise the bar's extremes are used,
+        # which is how a resting order really fills.
+        if self.cfg.stop_on_close_only:
+            if (c.close <= pos.hard_stop) if pos.is_long else (c.close >= pos.hard_stop):
+                # A gap straight through still fills at the open, not the stop.
+                gapped = (c.open < pos.hard_stop) if pos.is_long else (c.open > pos.hard_stop)
+                return (c.open if gapped else c.close), "stop (close)"
+        else:
+            if pos.is_long and c.low <= pos.hard_stop:
+                return min(pos.hard_stop, c.open), "hard stop"
+            if not pos.is_long and c.high >= pos.hard_stop:
+                return max(pos.hard_stop, c.open), "hard stop"
 
         self.update_safety_line(pos, i)
         buffer = self.cfg.safety_buffer_atr * self.atr[i]

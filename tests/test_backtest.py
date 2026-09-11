@@ -61,11 +61,31 @@ class TestOnRealData(unittest.TestCase):
         result = run(self.candles, self.cfg, self.risk)
         self.assertGreater(len(result.trades), 20)
 
-    def test_no_loss_exceeds_the_risk_budget_by_much(self):
-        result = run(self.candles, self.cfg, self.risk)
+    def test_intrabar_stops_bound_the_loss_near_one_r(self):
+        """With a resting stop that fills intrabar, risk is genuinely capped."""
+        from dataclasses import replace
+        cfg = replace(self.cfg, stop_on_close_only=False)
+        result = run(self.candles, cfg, self.risk)
+        self.assertTrue(result.trades)
         for t in result.trades:
             self.assertGreater(t.r_multiple, -3.0,
                                f"loss of {t.r_multiple:.2f}R on {t.entry_ts}")
+
+    def test_close_only_stops_do_not_bound_the_loss(self):
+        """The cost of "stay in unless price BREAKS the line".
+
+        Waiting for a close means a single bar can drive through the stop and
+        settle far beyond it, so the loss is whatever that bar decides. This
+        is not a defect to fix -- it is the documented price of the rule, and
+        it needs to stay visible.
+        """
+        from dataclasses import replace
+        cfg = replace(self.cfg, stop_on_close_only=True)
+        result = run(self.candles, cfg, self.risk)
+        worst = min(t.r_multiple for t in result.trades)
+        self.assertLess(worst, -1.5,
+                        "close-only exits are expected to overshoot 1R "
+                        f"somewhere; worst was {worst:.2f}R")
 
     def test_truncating_real_history_cannot_change_settled_trades(self):
         cut = len(self.candles) - 300

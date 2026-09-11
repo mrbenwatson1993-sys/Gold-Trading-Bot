@@ -82,6 +82,15 @@ class StrategyConfig:
     # which leaves it much further from price between swings.
     stop_follows_safety: bool = True
     trail_buffer_atr: float = 0.25   # how far under the line the stop rests
+    # The stop is a real resting order that fills intrabar, so a trade can
+    # never lose more than the risk it was sized for. That is the whole point
+    # of a fixed initial stop, and it is why this defaults to False.
+    #
+    # Setting it True waits for a CLOSE through the stop instead -- closer to
+    # "price must actually break the line" -- but it removes the guarantee:
+    # measured on 4H gold it allows single trades to lose 6.5R, because a bar
+    # can drive through the level and settle far beyond it. Research only.
+    stop_on_close_only: bool = False
 
     # --- grading ----------------------------------------------------------
     min_grade: str = "F"             # "F" = ungated: grade reports, never blocks

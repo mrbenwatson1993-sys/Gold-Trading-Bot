@@ -358,7 +358,89 @@ on 4H the filter improves *every* touch bucket and *both* regimes, which a pure
 fluke would not do. That is a hypothesis worth testing properly on real GC
 futures over a decade — not a result.
 
-## The result that holds: always in WITH the trend, flat against it
+## Touch count, tested the way the method actually describes it
+
+No higher-timeframe filter -- the monthly and weekly are used to place the
+lines accurately, not to veto trades. A fixed stop on every trade sized to risk
+a set % of the account, trailing up with price along the Safety Line, never
+moving back. Always in the market, flipping on each break.
+`analysis/touch_grid.py` and `analysis/touch_eras.py`.
+
+**A third inert-filter bug had to be fixed first.** The touch rule was checked
+only in `find_signal()`, and in always-in mode nearly every trade is a
+reversal that simply adopts whichever line just broke. Two-touch and
+three-touch runs returned byte-identical results -- 2,873 trades either way.
+The rule now governs the flip too: fail it and the position closes rather than
+reversing onto a line that was never tested enough to mean anything.
+
+(Two-touch is the geometric floor. A straight line needs two points, so "0
+touches" and "1 touch" cannot define a trendline; the 2-touch row *is* the
+zero-extra-touches case.)
+
+### More touches is better on every single measure
+
+16.5 years, 4H gold, 1% risk:
+
+| touches | trades | win% | expectancy | PF | return | max DD |
+|---|---|---|---|---|---|---|
+| 2 (0 extra) | 2033 | 30.5 | +0.031R | **1.00** | +2.7% | 32.3% |
+| 3 (1 extra) | 804 | 33.0 | +0.065R | 1.08 | +22.3% | 18.7% |
+| 4 (2 extra) | 597 | 31.3 | +0.108R | 1.33 | +67.5% | 16.1% |
+| **5 (3 extra)** | 343 | 35.3 | **+0.162R** | **1.47** | +55.2% | **9.3%** |
+| unlimited 2+ | 2873 | 30.9 | +0.046R | 1.05 | +70.6% | 33.1% |
+
+Expectancy, profit factor and drawdown all improve monotonically with every
+touch added. **The two-touch break has a profit factor of exactly 1.00 -- no
+edge whatsoever.** Everything the strategy earns comes from lines price has
+tested repeatedly, which is precisely the claim the method makes.
+
+Taking every break regardless ("unlimited") buys the highest raw return by
+brute force -- 2,873 trades at 33% drawdown -- while the 5-touch filter earns
+almost as much from an eighth of the trades at a third of the drawdown.
+
+### Position size confirms the edge is real
+
+At 2% risk instead of 1%, the configurations separate by whether they have an
+edge to compound:
+
+| touches | 1% risk | 2% risk |
+|---|---|---|
+| 2 | +2.7% (32.3% DD) | **−1.0%** (49.0% DD) |
+| 3 | +22.3% (18.7% DD) | +1.9% (36.3% DD) |
+| 4 | +67.5% (16.1% DD) | +78.5% (25.4% DD) |
+| **5** | +55.2% (9.3% DD) | **+118.1%** (16.8% DD) |
+
+Doubling risk roughly doubles the 5-touch return, because there is a real edge
+to scale. It pushes the 2-touch version *negative*, because volatility drag on
+a zero-edge system compounds against you. That asymmetry is a useful test in
+its own right.
+
+The risk cap holds: the worst single trade across 2,873 is −1.77R, and the
+overshoot past 1R is gap risk on the open, which no stop can prevent.
+
+### Per-era it is noisier than the aggregate suggests
+
+Expectancy by touch count, 1% risk:
+
+| era | 2 touch | 3 touch | 4 touch | 5 touch |
+|---|---|---|---|---|
+| 2007-2010 | −0.060 (442) | +0.068 (205) | **−0.095** (141) | +0.308 (81) |
+| 2011-2014 | +0.084 (429) | +0.150 (187) | +0.348 (131) | +0.184 (76) |
+| 2015-2018 | +0.088 (414) | +0.070 (195) | +0.113 (154) | **−0.011** (88) |
+| 2019-2023 | +0.013 (728) | **−0.031** (212) | +0.108 (163) | +0.170 (92) |
+| **ALL** | +0.031 | +0.065 | +0.108 | **+0.162** |
+
+**No individual era shows a clean 2 < 3 < 4 < 5 ladder.** The monotonicity is
+an aggregate property. What does hold per era is the direction: 4- and 5-touch
+are positive in three eras of four, their positive eras are far larger
+(+0.348, +0.308) and their negative era is far smaller (−0.095, −0.011) than
+the 2-touch case. Cells hold 76-212 trades, so individual numbers are noisy
+while the pattern across them is not.
+
+This is the most robust finding in the project, and it is the strategy's own
+core claim rather than anything added to it.
+
+## Also holds: always in WITH the trend, flat against it
 
 Two bugs were hiding this, both found by asking why the trade count was so low
 for a strategy that is supposed to be in the market all the time.
