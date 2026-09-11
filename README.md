@@ -14,6 +14,78 @@ There is **no profit target**. The only fixed quantity in the system is the
 initial risk; the reward is whatever price hands you before it breaks back
 through the opposing line. Price decides the entry and price decides the exit.
 
+## The configuration to actually use
+
+```bash
+python3 -m tori backtest data/gold_4h_16y.csv --symbol MGC --recommended
+```
+
+Lines drawn on the **daily, weekly and monthly** and projected onto the traded
+chart -- not fitted to its own swings, which is what every early version did
+and what kept the results confined to gold. Three touches. The stop trails
+0.25 ATR from the line, never sits closer to price than the instrument's own
+99th-percentile gap, and fills intrabar while it is still below entry so the
+loss stays capped at what the trade was sized for. Always in the market. No
+profit target.
+
+Applied **unchanged** to nine markets, it is profitable on seven:
+
+| market | PF | expectancy | return | max DD |
+|---|---|---|---|---|
+| **GOLD** | **1.38** | +0.356R | +105.0% | 17.0% |
+| **S&P** | **1.37** | +0.243R | +34.4% | **8.9%** |
+| **GBPUSD** | **1.17** | +0.124R | +26.9% | 14.0% |
+| EURUSD | 1.14 | +0.225R | +21.8% | 23.6% |
+| SILVER | 1.12 | +0.144R | +21.0% | 23.4% |
+| NASDAQ | 1.03 | +0.013R | +2.4% | 21.2% |
+| BRENT | 1.00 | +0.038R | +0.3% | 17.2% |
+| AUDUSD | 0.94 | +0.017R | −9.0% | 24.9% |
+| USDJPY | 0.78 | −0.144R | −32.8% | 39.3% |
+
+**Do not trade it on one market.** Split by era, every market loses its edge
+for years at a time:
+
+| market | 2007-11 | 2012-16 | 2017-23 |
+|---|---|---|---|
+| GOLD | 1.90 | 1.98 | **0.98** |
+| S&P | — | **0.61** | 1.48 |
+| GBPUSD | 1.45 | 1.04 | 1.04 |
+| EURUSD | 1.55 | 1.28 | **0.95** |
+| SILVER | — | 1.28 | **0.71** |
+
+But they fail at *different times* -- gold's strongest period is the S&P's
+worst. Traded together, one parameter set, each sleeve risking a third of the
+budget:
+
+| portfolio | trades | return | max DD | return/DD |
+|---|---|---|---|---|
+| GOLD alone | 307 | +109.3% | 9.5% | 11.56 |
+| GOLD + S&P | 464 | +73.7% | 5.9% | 12.39 |
+| **GOLD + S&P + GBPUSD** | 742 | +60.6% | **4.3%** | **14.00** |
+| + EURUSD | 999 | +59.9% | 5.1% | 11.66 |
+| + SILVER | 1249 | +55.2% | 6.3% | 8.74 |
+
+And that portfolio is the one thing here that survives every era:
+
+| era | trades | return | max DD | return/DD |
+|---|---|---|---|---|
+| 2007-2011 | 164 | +27.7% | 4.2% | 6.59 |
+| 2012-2016 | 202 | +14.8% | 4.4% | 3.39 |
+| **2017-2023** | 376 | **+18.2%** | 6.1% | 3.00 |
+
+Returns look modest because total portfolio risk is held at 1% per trade
+across three sleeves. At a 4.3% drawdown there is room to scale: targeting the
+~15% drawdown a single market already runs would put returns near +200%, with
+the same shape.
+
+**What to hold against it.** Return/DD declines across the eras (6.59, 3.39,
+3.00) -- the edge is weakening, not stable. The three markets were chosen
+after seeing all nine results, though the *parameters* were fixed across all
+of them. USDJPY is a genuine failure (PF 0.78) and should be avoided rather
+than explained away. And these are spot/CFD series standing in for the
+contracts, validated against real GC futures at 0.993 correlation but not the
+same instruments.
+
 ## Quick start
 
 ```bash

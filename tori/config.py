@@ -226,6 +226,41 @@ def simple() -> StrategyConfig:
     )
 
 
+def recommended() -> StrategyConfig:
+    """The configuration this project actually arrived at.
+
+    Lines are drawn on the daily, weekly and monthly and projected onto the
+    traded chart -- not fitted to its own swings, which is what every early
+    version did and what kept the results confined to gold. Three touches. The
+    stop trails 0.25 ATR from the line, never closer to price than the
+    instrument's own 99th-percentile gap, and fills intrabar while it is still
+    below entry so the loss stays capped at what the trade was sized for.
+    Always in the market. No profit target.
+
+    Applied unchanged to nine markets it is profitable on seven, and the three
+    it suits best -- gold, the S&P and GBPUSD -- hold up in every era tested
+    when traded together. Used on a single market it does not: each of them
+    loses its edge for years at a time, at different times from the others.
+    """
+    return replace(
+        simple(),
+        line_timeframes=("1d", "1w", "1M"),
+        min_touches=3,
+        max_touches=99,
+        swing_strength=3,
+        safety_swing_strength=12,
+        always_in=True,
+        htf_align="none",
+        exit_on_stop_only=True,
+        stop_follows_safety=True,
+        safety_line_redraw=False,
+        stop_on_close_only=False,
+        stop_close_confirm_in_profit=True,
+        trail_buffer_atr=0.25,
+        auto_gap_stop_pct=99.0,
+    )
+
+
 GRADE_ORDER = ["F", "C", "B", "A", "A+"]
 
 

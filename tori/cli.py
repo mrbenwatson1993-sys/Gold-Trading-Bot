@@ -26,6 +26,10 @@ def _strategy_args(p: argparse.ArgumentParser) -> None:
     p.add_argument("csv", help="OHLC csv (time,open,high,low,close[,volume])")
     p.add_argument("--min-grade", default="F", choices=["F", "C", "B", "A", "A+"],
                    help="lowest grade to act on; F (default) never blocks")
+    p.add_argument("--recommended", action="store_true",
+                   help="use the configuration this project arrived at: lines "
+                        "from the daily/weekly/monthly, 3 touches, gap-"
+                        "calibrated trailing stop, always in")
     p.add_argument("--filtered", action="store_true",
                    help="enable the optional quality filters (off by default)")
     p.add_argument("--touches", type=int, default=2,
@@ -53,8 +57,13 @@ def _strategy_args(p: argparse.ArgumentParser) -> None:
 
 
 def _build_cfg(args, candles) -> StrategyConfig:
-    from .config import simple
-    base = StrategyConfig() if getattr(args, "filtered", False) else simple()
+    from .config import recommended, simple
+    if getattr(args, "recommended", False):
+        base = recommended()
+    elif getattr(args, "filtered", False):
+        base = StrategyConfig()
+    else:
+        base = simple()
     cfg = replace(
         base,
         swing_strength=args.swing, min_touches=args.touches,
