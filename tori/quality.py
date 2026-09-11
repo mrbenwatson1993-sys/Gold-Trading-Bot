@@ -55,6 +55,21 @@ def _clamp(x: float) -> float:
     return max(0.0, min(1.0, x))
 
 
+def grade_by_touches(touches: int, cfg: StrategyConfig) -> str:
+    """The grade, as the strategy actually defines it: how many times price
+    respected the line before it broke.
+
+    Three touches then a break is the A+ setup -- that is the whole claim.
+    Two touches is the same shape with less evidence behind it, so it grades
+    B. Everything else the engine can measure is reporting, not grading.
+    """
+    if touches >= cfg.a_plus_touches:
+        return "A+"
+    if touches == 2:
+        return "B"
+    return "C"
+
+
 def grade_setup(brk: Break, cfg: StrategyConfig, structure: Structure,
                 levels: list[Level], room_r: float, blocker: Level | None,
                 stop_distance: float) -> Grade:
@@ -150,6 +165,12 @@ def grade_setup(brk: Break, cfg: StrategyConfig, structure: Structure,
 
     # --- letter ----------------------------------------------------------
     caps: list[str] = []
+    if not cfg.rubric_grading:
+        # Touch count alone decides the grade. The scorecard above still gets
+        # computed and printed, because it is useful to read -- it just does
+        # not get a vote.
+        return Grade(total, grade_by_touches(line.touch_count, cfg), crits, caps)
+
     if total >= 85 and line.touch_count >= cfg.a_plus_touches and brk.strong:
         letter = "A+"
     elif total >= 75 and line.touch_count >= cfg.a_plus_touches:

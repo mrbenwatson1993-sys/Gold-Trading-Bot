@@ -84,6 +84,17 @@ def run(candles: list[Candle], cfg: StrategyConfig | None = None,
                 equity = trade.equity_after
                 result.trades.append(trade)
                 result.equity_curve.append((candles[i].ts, equity))
+
+                # Always-in: the line that just stopped us out is the line we
+                # now trade from the other side. Flip rather than go flat.
+                if cfg.always_in:
+                    flip = strat.reversal(position, i, reason)
+                    position = None
+                    if flip is not None:
+                        size = _size(flip, contract, risk, equity, result)
+                        if size >= 1:
+                            pending, pending_contracts = flip, size
+                    continue
                 position = None
             else:
                 continue   # one position at a time
@@ -99,12 +110,8 @@ def run(candles: list[Candle], cfg: StrategyConfig | None = None,
             if not signal.is_long and not risk.allow_shorts:
                 result.skipped["shorts disabled"] += 1
                 continue
-            size = contract.contracts_for_risk(risk.risk_dollars(equity), signal.risk)
-            size = min(size, risk.max_contracts)
+            size = _size(signal, contract, risk, equity, result)
             if size < 1:
-                # Stop too wide for the account. Skipping is the correct
-                # answer; trading it anyway would break the risk model.
-                result.skipped["stop too wide to size"] += 1
                 continue
             pending, pending_contracts = signal, size
 
@@ -118,6 +125,22 @@ def run(candles: list[Candle], cfg: StrategyConfig | None = None,
         result.equity_curve.append((candles[last].ts, equity))
 
     return result
+
+
+def _size(signal: Signal, contract: Contract, risk: RiskConfig,
+          equity: float, result: BacktestResult) -> int:
+    """Whole contracts for this trade, or 0 meaning skip.
+
+    Skipping is the correct answer when the stop is too wide for the account:
+    taking it anyway would silently break the risk model, and in a backtest
+    that shows up as a flattering result rather than as an error.
+    """
+    size = min(contract.contracts_for_risk(risk.risk_dollars(equity), signal.risk),
+               risk.max_contracts)
+    if size < 1:
+        result.skipped["stop too wide to size"] += 1
+        return 0
+    return size
 
 
 def _close(pos: Position, i: int, candle: Candle, price: float, reason: str,
@@ -165,6 +188,18 @@ def compute_stats(result: BacktestResult) -> dict:
         g["net"] += t.net
         g["wins"] += 1 if t.net > 0 else 0
 
+    by_touches: dict[int, dict] = {}
+    for t in trades:
+        n = t.signal.brk.line.touch_count
+        d = by_touches.setdefault(n, {"n": 0, "r": 0.0, "net": 0.0, "wins": 0})
+        d["n"] += 1
+        d["r"] += t.r_multiple
+        d["net"] += t.net
+        d["wins"] += 1 if t.net > 0 else 0
+
+    fresh = [t for t in trades if not t.signal.is_reversal]
+    flips = [t for t in trades if t.signal.is_reversal]
+
     by_direction: dict[str, dict] = {}
     for t in trades:
         d = by_direction.setdefault(t.direction, {"n": 0, "r": 0.0, "net": 0.0, "wins": 0})
@@ -191,5 +226,8 @@ def compute_stats(result: BacktestResult) -> dict:
         "total_costs": sum(t.costs for t in trades),
         "exit_reasons": Counter(t.exit_reason for t in trades),
         "by_grade": by_grade,
+        "by_touches": by_touches,
+        "fresh_breaks": len(fresh),
+        "reversals": len(flips),
         "by_direction": by_direction,
     }

@@ -65,6 +65,58 @@ other one — already drawn, already extended — is the Safety Line.
         \ 6-touch resistance @   4403.25  (+91.39 from price)
 ```
 
+## Always in the market
+
+Price under the descending line is a short. It breaks up, so that exits and
+flips long. It breaks back through the ascending line, which exits and flips
+short. The exit and the next entry are one event — you are never flat, you are
+just trading the trend. `--flat` waits for a fresh setup instead.
+
+It roughly triples the trade count, and it is not free:
+
+| timeframe | flat between trades | always in |
+|---|---|---|
+| 5m (342 / 858) | +3.9%, 9.7% DD, PF 1.05 | **+28.6%**, 20.4% DD, PF 1.12 |
+| 15m (392 / 960) | −18.0%, 21.8% DD, PF 0.83 | −8.5%, 26.3% DD, PF 0.97 |
+| 1h (171 / 470) | +3.4%, 9.3% DD, PF 1.07 | +7.6%, 14.2% DD, PF 1.05 |
+| 4h (108 / 268) | **+26.5%**, 5.2% DD, PF 1.80 | +9.6%, 13.0% DD, PF 1.09 |
+
+Always-in wins on the fast timeframes and loses badly on 4H, where being
+forced into every flip gives back most of the edge. Drawdown roughly doubles
+everywhere. It is the default because it is the strategy as described, but on
+4H the evidence says stay flat between setups.
+
+### Always-in mostly trades young lines
+
+Worth knowing before trusting a grade. Each reversal adopts the line that just
+broke as its new Action Line, and those are Safety Lines — drawn from fresh
+structure, so usually only 2 touches. On 4H, 248 of 268 always-in trades are
+flips and the touch mix is 231 two-touch against 37 of three or more.
+
+So always-in and "only take the A+ 3-touch setup" pull against each other: the
+first forces you into every flip regardless of quality. `fresh_breaks` and
+`reversals` are reported separately so the two never get conflated.
+
+## Does the 3-touch rule hold?
+
+Measured on genuine line breaks only (flips excluded, since a flip inherits
+its touch count from a Safety Line and would poison the comparison):
+
+| timeframe | 2 touches (B) | 3+ touches (A+) |
+|---|---|---|
+| 5m | −0.084R (n=201) | **+0.088R** (n=141) |
+| 15m | −0.027R (n=209) | **+0.248R** (n=183) |
+| 1h | **+0.236R** (n=76) | +0.038R (n=95) |
+| 4h | **+0.307R** (n=42) | +0.240R (n=66) |
+
+**Partial support.** The A+ setup clearly beats the two-touch version on 5m and
+15m, and clearly does not on 1h and 4h. Exactly three touches is the sweet spot
+on the fast timeframes (+0.15R on 5m, +0.44R on 15m) while four and five
+degrade — more touches is not monotonically better.
+
+This is one instrument over a few months. Treat it as "not yet contradicted on
+fast timeframes", not as confirmation.
+
 ## What the data says
 
 1.5 years of 4H gold, micro gold futures (MGC), 1% risk, $250k account,
@@ -245,9 +297,15 @@ bar, the two runs would disagree.
 - Strongly long-biased sample.
 - Commissions are placeholders; slippage is a flat tick assumption, and real
   fills around a break are worse than that.
-- The edge degrades on lower timeframes in this sample: profit factor 1.80 on
-  4H against 1.07 on 1H. Seven months of hourly data is not enough to conclude
-  much, but it is not encouraging for dropping down.
+- R-multiples and dollars can disagree, badly. The 15m always-in run shows
+  +0.146R expectancy alongside a −8.5% return and a profit factor of 0.97.
+  Whole-contract rounding is why: a wide-stop trade rounds down to fewer
+  contracts and therefore risks less than the nominal 1%, so its R does not
+  convert into proportional money. **Trust the dollar column over the R
+  column** on any instrument where one contract is a large fraction of the
+  risk budget.
+- The 5m and 15m windows are 35 and 103 days. That is one market condition,
+  not a sample.
 - Intrabar order is unknowable; a bar that touches the stop is assumed to have
   stopped out even when it closed well beyond.
 - Nothing here is financial advice or a live trading system. It is a research

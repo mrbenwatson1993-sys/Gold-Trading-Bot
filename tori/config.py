@@ -79,6 +79,15 @@ class StrategyConfig:
 
     # --- grading ----------------------------------------------------------
     min_grade: str = "F"             # "F" = ungated: grade reports, never blocks
+    # False: the grade is simply the touch count (3+ = A+, 2 = B), which is how
+    # the strategy defines it. True: use the ten-criterion scorecard instead,
+    # which measured no better and graded anti-predictively.
+    rubric_grading: bool = False
+    # Always in the market. Price under the descending line is a short; it
+    # breaks up, so that exits and flips long; it breaks back through the
+    # ascending line, which exits and flips short. The exit and the next entry
+    # are the same event -- you are never flat, you are just trading the trend.
+    always_in: bool = True
     require_trending_htf: bool = False  # block setups inside HTF chop
 
     # --- derived ----------------------------------------------------------
@@ -130,6 +139,7 @@ def simple() -> StrategyConfig:
     """
     return StrategyConfig(
         min_grade="F",                  # grade is a label, not a gate
+        rubric_grading=False,            # touch count is the grade
         break_min_displacement_atr=0.0,  # a close through the line is a close
         break_min_body_ratio=0.0,        # through the line
         require_trending_htf=False,

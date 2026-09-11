@@ -37,6 +37,9 @@ def _strategy_args(p: argparse.ArgumentParser) -> None:
     p.add_argument("--entry", default="next_open", choices=["next_open", "close"])
     p.add_argument("--trending-only", action="store_true",
                    help="skip setups while structure is ranging")
+    p.add_argument("--flat", action="store_true",
+                   help="go flat between setups instead of always being in "
+                        "the market and reversing on each line break")
     p.add_argument("--step-stop", action="store_true",
                    help="step the stop at swing pivots instead of trailing "
                         "it along the Safety Line every bar")
@@ -52,6 +55,7 @@ def _build_cfg(args, candles) -> StrategyConfig:
         entry_mode=args.entry, min_grade=args.min_grade,
         require_trending_htf=getattr(args, "trending_only", False),
         stop_follows_safety=not getattr(args, "step_stop", False),
+        always_in=not getattr(args, "flat", False),
     )
     bs = bar_seconds(candles)
     return cfg.for_timeframe(bs) if bs else cfg

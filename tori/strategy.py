@@ -44,6 +44,7 @@ class Signal:
     initial_stop: float
     room_r: float
     blocker: Level | None
+    is_reversal: bool = False   # came from a flip, not a fresh line break
 
     @property
     def direction(self) -> str:
@@ -90,6 +91,20 @@ class Position:
 
     def safety_value(self, index: int) -> float | None:
         return self.safety_line.value_at(index) if self.safety_line else None
+
+
+    def broken_line(self, reason: str) -> Trendline:
+        """Whichever line price just came back through.
+
+        That line is the Action Line for the trade in the other direction --
+        the same break, read from the other side.
+        """
+        if reason == "safety line" and self.safety_line is not None:
+            return self.safety_line
+        if reason == "hard stop" and self.safety_line is not None:
+            # the resting stop rides the Safety Line, so it is that line
+            return self.safety_line
+        return self.action_line
 
 
 @dataclass
@@ -325,6 +340,21 @@ class ToriStrategy:
             touches=[a, b], atr_ref=self.atr[i],
         )
 
+        # Count how many pivots actually sit on this line, rather than
+        # recording just the two anchors. Without this every Safety Line looks
+        # like a 2-touch line, and in always-in mode -- where each reversal
+        # adopts the broken Safety Line as its Action Line -- that silently
+        # labels almost every trade a 2-touch setup.
+        tol = cfg.touch_tolerance_atr * self.atr[i]
+        line.touches = [s for s in visible_swings(self.swings, i, pivot)
+                        if s.index >= a.index
+                        and abs(s.price - line.value_at(s.index)) <= tol]
+        if a not in line.touches:
+            line.touches.insert(0, a)
+        if b not in line.touches:
+            line.touches.append(b)
+        line.touches.sort(key=lambda s: s.index)
+
         if cfg.safety_only_improves and pos.safety_line is not None:
             old, new = pos.safety_line.value_at(i), line.value_at(i)
             if (new < old) if pos.is_long else (new > old):
@@ -337,6 +367,50 @@ class ToriStrategy:
         if (candidate > pos.hard_stop) if pos.is_long else (candidate < pos.hard_stop):
             pos.hard_stop = candidate
             pos.structural_anchor = b
+
+    def reversal(self, pos: Position, i: int, reason: str) -> Signal | None:
+        """Turn an exit into the entry for the opposite direction.
+
+        Always-in means the position that just closed and the one about to
+        open are two readings of one event: price broke the line it had been
+        respecting. The broken line becomes the new Action Line, and the new
+        Safety Line gets drawn from whatever structure forms next.
+        """
+        if i + 1 >= len(self.candles):
+            return None
+        atr_ref = self.atr[i]
+        if atr_ref <= 0:
+            return None
+
+        line = pos.broken_line(reason)
+        direction = "short" if pos.is_long else "long"
+        c = self.candles[i]
+        level = line.value_at(i)
+        displacement = abs(c.close - level)
+
+        brk = Break(
+            line=line, index=i, ts=c.ts, close=c.close, line_value=level,
+            displacement_atr=displacement / atr_ref, body_ratio=c.body_ratio,
+            direction=direction, strong=True, atr_ref=atr_ref,
+        )
+
+        entry_index = i + 1
+        entry_price = self.candles[entry_index].open
+        stop = self._initial_stop(brk, i, atr_ref)
+        if stop is None:
+            return None
+        risk = abs(entry_price - stop)
+        if risk <= 0:
+            return None
+
+        levels = self.levels_at(i)
+        room_r, blocker = clean_space(levels, entry_price, direction, risk, atr_ref)
+        structure = classify(self.candles, self.swings, i)
+        grade = grade_setup(brk, self.cfg, structure, levels, room_r, blocker, risk)
+        return Signal(brk=brk, grade=grade, structure=structure,
+                      entry_index=entry_index, entry_price=entry_price,
+                      initial_stop=stop, room_r=room_r, blocker=blocker,
+                      is_reversal=True)
 
     def check_exit(self, pos: Position, i: int) -> tuple[float, str] | None:
         """Resolve bar `i` for an open position -> (exit price, reason).

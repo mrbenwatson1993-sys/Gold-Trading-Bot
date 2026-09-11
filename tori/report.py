@@ -134,6 +134,13 @@ def backtest_report(result: BacktestResult, show_trades: bool = True) -> str:
             out.append(f"    {letter:>2}  n={g['n']:<4} win {g['wins']/g['n']*100:>5.1f}%  "
                        f"total {g['r']:+7.1f}R  avg {g['r']/g['n']:+.3f}R  "
                        f"net ${g['net']:>9,.0f}")
+    out.append("  by touch count (the grade):")
+    for n in sorted(s["by_touches"]):
+        v = s["by_touches"][n]
+        tag = "A+" if n >= 3 else ("B" if n == 2 else "C")
+        out.append(f"    {n} touches ({tag})  n={v['n']:<4} "
+                   f"win {v['wins']/v['n']*100:>5.1f}%  total {v['r']:+7.1f}R  "
+                   f"avg {v['r']/v['n']:+.3f}R  net ${v['net']:>9,.0f}")
     out.append("  by direction:")
     for d, v in s["by_direction"].items():
         out.append(f"    {d:<6} n={v['n']:<4} win {v['wins']/v['n']*100:>5.1f}%  "
