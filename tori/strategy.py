@@ -148,11 +148,12 @@ class ToriStrategy:
     """
 
     def __init__(self, candles: list[Candle], atr: list[float],
-                 cfg: StrategyConfig):
+                 cfg: StrategyConfig, alignment=None):
         self.candles = candles
         self.atr = atr
         self.cfg = cfg
         self.swings = find_swings(candles, cfg.swing_strength)
+        self.alignment = alignment
         self._lines: list[Trendline] = []
         self._confirmed_count = 0
         self._levels: list[Level] = []
@@ -249,6 +250,13 @@ class ToriStrategy:
         risk = abs(entry_price - stop)
         if risk <= 0:
             return None
+
+        if brk.line.touch_count > cfg.max_touches:
+            return None
+        # Do the timeframes above this one support the trade?
+        if self.alignment is not None and cfg.htf_align != "none":
+            if not self.alignment.agrees(i, brk.direction, cfg.htf_align):
+                return None
 
         levels = self.levels_at(i)
         room_r, blocker = clean_space(levels, entry_price, brk.direction, risk, atr_ref)

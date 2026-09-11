@@ -51,7 +51,13 @@ def run(candles: list[Candle], cfg: StrategyConfig | None = None,
 
     contract = get_contract(risk.symbol)
     atr = atr_series(candles, cfg.atr_period)
-    strat = ToriStrategy(candles, atr, cfg)
+    alignment = None
+    if cfg.htf_align != "none":
+        from .htf import build_alignment
+        alignment = build_alignment(candles, cfg.bar_seconds,
+                                    tuple(cfg.htf_timeframes),
+                                    cfg.swing_strength)
+    strat = ToriStrategy(candles, atr, cfg, alignment)
 
     result = BacktestResult(contract=contract, cfg=cfg, risk=risk,
                             bars=len(candles),

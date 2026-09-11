@@ -37,6 +37,13 @@ def _strategy_args(p: argparse.ArgumentParser) -> None:
     p.add_argument("--entry", default="next_open", choices=["next_open", "close"])
     p.add_argument("--trending-only", action="store_true",
                    help="skip setups while structure is ranging")
+    p.add_argument("--htf", default="none",
+                   choices=["none", "soft", "majority", "all"],
+                   help="require higher-timeframe agreement: soft = nothing "
+                        "above opposes the trade, majority = more agree than "
+                        "oppose, all = every parent timeframe agrees")
+    p.add_argument("--htf-timeframes", default="1d,1w",
+                   help="parent timeframes for --htf (default 1d,1w)")
     p.add_argument("--flat", action="store_true",
                    help="go flat between setups instead of always being in "
                         "the market and reversing on each line break")
@@ -56,6 +63,9 @@ def _build_cfg(args, candles) -> StrategyConfig:
         require_trending_htf=getattr(args, "trending_only", False),
         stop_follows_safety=not getattr(args, "step_stop", False),
         always_in=not getattr(args, "flat", False),
+        htf_align=getattr(args, "htf", "none"),
+        htf_timeframes=tuple(
+            getattr(args, "htf_timeframes", "1d,1w").split(",")),
     )
     bs = bar_seconds(candles)
     return cfg.for_timeframe(bs) if bs else cfg

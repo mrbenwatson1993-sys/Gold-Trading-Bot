@@ -290,6 +290,74 @@ over the first N bars of real gold, then over all of them, and every trade that
 settled before the cut must be identical. If any decision peeked at a future
 bar, the two runs would disagree.
 
+## Deep grid: touch count x higher-timeframe alignment
+
+80 backtests: every timeframe, crossed with how many touches the line had
+before it broke, crossed with how much higher-timeframe agreement is demanded.
+Run in flat mode, because always-in confounds the question -- each reversal
+inherits its touch count from the Safety Line that broke, not from a line that
+was tested three times. Reproduce with `analysis/research.py`.
+
+### Touch count on its own decides nothing
+
+| timeframe | exactly 2 | exactly 3 | exactly 4 |
+|---|---|---|---|
+| 4H | +0.296R | +0.147R | +0.039R |
+| 1H | +0.210R | −0.036R | +0.034R |
+| 15m | −0.059R | +0.392R | +0.175R |
+
+No ordering survives across timeframes. Three touches beats two on 15m and
+loses to it on 4H and 1H. **Touch count alone is not the edge.**
+
+### Higher-timeframe alignment is the strongest signal found
+
+On 4H, requiring that nothing above opposes the trade ("soft") roughly doubles
+expectancy and halves drawdown — and it does so in *every* touch bucket:
+
+| 4H | no filter | soft | majority |
+|---|---|---|---|
+| any 2+ | +0.266R, PF 1.80, DD 5.2% | **+0.577R, PF 3.27, DD 2.4%** | +0.094R |
+| exactly 2 | +0.296R | +0.378R | +0.115R |
+| exactly 3 | +0.147R | +0.555R, PF 4.08 | **+0.750R, PF 5.73, DD 1.4%** |
+| exactly 4 | +0.039R | +0.265R | +0.436R |
+
+And it holds in both regimes, split at gold's top:
+
+| 4H window | exactly 3, no filter | soft | majority |
+|---|---|---|---|
+| bull (+65%, 1978 bars) | +0.092R | +0.707R | **+1.095R, PF 8.50** |
+| top/chop (−14%, 1255 bars) | +0.228R | +0.492R | **+0.840R, PF 5.37** |
+
+**Three touches only pays once the higher timeframes agree.** Alone it is
++0.147R; with majority agreement it is +0.750R. That is the combination, and
+it is what the strategy actually claims.
+
+### But it does not replicate below 4H
+
+| any 2+ | no filter | soft | majority |
+|---|---|---|---|
+| 4H | +0.266R | **+0.577R** | +0.094R |
+| 1H | +0.126R | −0.087R | −0.137R |
+| 15m | +0.101R | +0.098R | −0.251R |
+
+On 1H alignment *costs* money. The obvious explanation — that daily and weekly
+are too slow to parent an hourly trade — was tested by using the two adjacent
+timeframes (4h/1d) instead, and it did not rescue it (−0.087R to −0.049R, still
+negative). So the effect is real on 4H, absent on 15m, and harmful on 1H, and
+there is currently no explanation for why.
+
+### What this is worth
+
+The best cell (4H, exactly 3 touches, majority agreement) is **+0.750R at
+PF 5.73 over 16 trades**. Sixteen. A profit factor of 5.7 on a sample that
+small is not evidence of anything, and searching an 80-cell grid guarantees
+some cell looks spectacular by chance.
+
+What keeps it interesting rather than dismissible is the internal consistency:
+on 4H the filter improves *every* touch bucket and *both* regimes, which a pure
+fluke would not do. That is a hypothesis worth testing properly on real GC
+futures over a decade — not a result.
+
 ## Is this profitable? Not on this evidence.
 
 The best configuration found (4H, flat between setups) returns +26.5% with a

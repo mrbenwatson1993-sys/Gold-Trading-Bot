@@ -89,6 +89,14 @@ class StrategyConfig:
     # are the same event -- you are never flat, you are just trading the trend.
     always_in: bool = True
     require_trending_htf: bool = False  # block setups inside HTF chop
+    # Higher-timeframe alignment: "none", "all", "soft" (nothing may oppose),
+    # or "majority". With everything above bullish, a downtrend on the trading
+    # timeframe is a pullback, so its break upward is the larger trend
+    # resuming -- and a short there is fighting every timeframe above it.
+    htf_align: str = "none"
+    htf_timeframes: tuple = ("1d", "1w")
+    # Research knobs: restrict which touch counts may trade at all.
+    max_touches: int = 99
 
     # --- derived ----------------------------------------------------------
     bar_seconds: int = 14400
