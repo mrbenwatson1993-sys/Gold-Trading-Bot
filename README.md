@@ -14,6 +14,49 @@ There is **no profit target**. The only fixed quantity in the system is the
 initial risk; the reward is whatever price hands you before it breaks back
 through the opposing line. Price decides the entry and price decides the exit.
 
+## More markets, not a faster chart
+
+Four to seven trades a month on multi-day holds forces the risk per trade up
+to make the effort worth it, which is the wrong direction. Running more
+sleeves at smaller size raises the trade count *and* lowers the drawdown,
+because the markets take turns failing.
+
+Every market on 4H, no per-market choices, each sleeve risking 1/N so total
+risk stays at 1% per trade:
+
+| portfolio | trades | **per month** | return | max DD | return/DD |
+|---|---|---|---|---|---|
+| GOLD | 307 | 1.6 | +109.3% | 9.5% | 11.56 |
+| + S&P | 464 | 2.4 | +73.7% | 5.9% | 12.39 |
+| + GBPUSD | 742 | 3.8 | +60.6% | 4.3% | **14.00** |
+| + SILVER | 992 | 5.0 | +54.5% | 5.9% | 9.22 |
+| + EURUSD | 1249 | 6.3 | +55.2% | 6.3% | 8.74 |
+| + NASDAQ | 1400 | 7.1 | +46.3% | 7.0% | 6.64 |
+| **+ BRENT** | **1583** | **8.0** | +40.7% | **5.5%** | 7.45 |
+
+Seven markets doubles the trade count against three (8.0 a month against 3.8)
+while the drawdown *stays* around 5%. Return per unit of risk falls as weaker
+markets are added -- that is the trade being made, frequency for quality.
+
+**The sizing consequence is the point.** At 8 trades a month and a 5.5%
+drawdown there is room to risk roughly three times as much per trade and still
+sit inside a 16% drawdown, which is less than gold alone ran at 1%. Frequency
+buys the ability to size up; it does not require it.
+
+### One tempting result that is probably fitted
+
+Choosing each market's entry chart by whichever scored better produces a
+better portfolio -- 6.2 trades a month at 3.3% drawdown, return/DD 21.66 -- but
+it rests on USDJPY flipping from **PF 0.77 on 4H to 1.24 on 1H**. Across
+eighteen cells (nine markets, two charts) a flip that size is what chance
+produces, and USDJPY was the single worst market in every earlier test. The
+all-4H table above is the one to trust; treat the per-market version as an
+upper bound rather than a plan.
+
+Note also that gold itself prefers 4H over the full sixteen years (PF 1.49
+against 1.35). The earlier finding that 1H matched it held on a 2015-onward
+subset; over the whole history 4H is better, so 4H is the safer default.
+
 ## Below 1H it collapses -- and 1 minute is pure noise
 
 5, 3 and 1 minute were tested the same way: the lines stay on the monthly,
