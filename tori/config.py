@@ -62,6 +62,12 @@ class StrategyConfig:
     # --- the Safety Line --------------------------------------------------
     safety_buffer_atr: float = 0.10  # close must clear the line to exit
     initial_stop_buffer_atr: float = 0.25
+    # When the structural pivot that would define risk sits on the wrong side
+    # of price, there is no swing-based stop to use. Falling flat there is
+    # wrong for an always-in system -- it can leave the strategy out of the
+    # market for months waiting on a fresh qualifying setup. This is the
+    # fallback distance, in ATR, so the flip still happens with defined risk.
+    fallback_stop_atr: float = 1.5
     safety_only_improves: bool = True  # the line ratchets, never loosens
     # Where the Safety Line is anchored, and it matters enormously.
     # "origin" fixes the first anchor at the low the new trend started from --

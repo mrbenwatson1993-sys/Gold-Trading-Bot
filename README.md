@@ -358,6 +358,63 @@ on 4H the filter improves *every* touch bucket and *both* regimes, which a pure
 fluke would not do. That is a hypothesis worth testing properly on real GC
 futures over a decade — not a result.
 
+## The result that holds: always in WITH the trend, flat against it
+
+Two bugs were hiding this, both found by asking why the trade count was so low
+for a strategy that is supposed to be in the market all the time.
+
+**Bug 1 -- "always-in" was flat 35% of the time.** When a flip was signalled
+but the structural pivot that defines risk sat on the wrong side of price
+(17.4% of attempts), `reversal()` gave up and the engine went flat, then needed
+a *fresh* qualifying setup to re-enter. One gap ran 588 bars -- three months out
+of the market. A volatility-scaled fallback stop fixes it: exposure went from
+59.2% to 91.6% and flat gaps from 73 to zero. (The residual 8.4% is exactly the
+one-bar lag between an exit and the next-open entry.)
+
+**Bug 2 -- the higher-timeframe filter was inert.** Only `find_signal()`
+checked alignment, and in always-in mode almost every trade is a reversal, so
+the filter touched 10 trades out of 2,223. Every "alignment does nothing on 16
+years" conclusion above was measuring a filter that was not running.
+
+With alignment actually governing the flips -- close the long when the
+ascending line breaks, but do not *sell* into a market that is bullish on every
+timeframe above -- over 26,630 bars:
+
+| HTF filter | trades | expectancy | PF | return | max DD |
+|---|---|---|---|---|---|
+| none | 2223 | +0.047R | 1.04 | +51.7% | **52.8%** |
+| **soft** | 347 | **+0.194R** | **1.54** | **+75.7%** | **7.9%** |
+| majority | 133 | +0.115R | 1.32 | +12.9% | 7.1% |
+| all | 19 | +0.139R | 1.42 | +2.0% | 2.1% |
+
+Four times the expectancy, better return, and drawdown collapsing from 53% to
+8%. Refusing to trade against the higher timeframes is the single most valuable
+rule found in this project.
+
+### And unlike everything else, it survives out of sample
+
+| era | n | expectancy | PF | return | max DD | buy & hold |
+|---|---|---|---|---|---|---|
+| 2007-2010 | 80 | −0.039R | 0.87 | −3.6% | 10.0% | +118.0% |
+| 2011-2014 | 100 | **+0.394R** | 1.74 | **+30.8%** | 5.0% | **−15.2%** |
+| 2015-2018 | 124 | +0.104R | 1.20 | +8.4% | 8.8% | +7.7% |
+| **2019-2023** | 115 | **+0.199R** | **1.49** | **+21.4%** | 7.8% | +50.3% |
+| ALL | 347 | +0.194R | 1.54 | +75.7% | 7.9% | +198.5% |
+
+Three of four eras positive, **including the most recent** -- where the previous
+best configuration lost 19.1%. It made +30.8% in 2011-2014 while gold fell
+15.2%. No era draws down more than 10%.
+
+Costs do not break it: +84.9% at zero slippage, +75.7% at one tick, +49.8% at
+four (PF 1.35). 347 trades in 16 years is cheap to run.
+
+**The honest caveats.** Raw return still trails buy-and-hold (+75.7% against
++198.5%) -- but at 7.9% drawdown against gold's ~45%, so risk-adjusted it is
+roughly twice as good, and at 1% risk per trade there is room to size up.
+2007-2010 is negative. 347 trades is a real sample but not a large one. And
+this is one instrument: the next test that matters is whether it holds on ES,
+CL and NQ, because a rule about trendlines should not care about the symbol.
+
 ## 16 years of 4-hour gold, 2007-2023 -- the definitive test
 
 `data/gold_4h_16y.csv` is 26,630 4H bars from 2007 to 2023: the 2008 crash,
@@ -366,7 +423,9 @@ and the 2022 rate shock. Zero OHLC integrity violations, no gaps, ~1,600 bars
 a year. This is 8x the earlier 4H sample and it is the timeframe every
 promising result in this project lived on. Reproduce with `analysis/deep4h.py`.
 
-**Nothing that looked good on 18 months survived it.**
+**Nothing that looked good on 18 months survived it** -- though note that the
+alignment rows in this section were measured with the filter inert (see the
+section above), so they understate it badly.
 
 ### Higher-timeframe alignment: gone
 

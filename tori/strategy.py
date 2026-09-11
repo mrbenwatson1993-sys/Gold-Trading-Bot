@@ -280,16 +280,24 @@ class ToriStrategy:
         was never broken at all.
         """
         buffer = self.cfg.initial_stop_buffer_atr * atr_ref
+        fallback = self.cfg.fallback_stop_atr * atr_ref
         pivot = LOW if brk.is_long else HIGH
         swing = last_swing_before(
             [s for s in self.swings if s.confirmed_at <= i], i, pivot)
-        if swing is None:
+
+        if swing is not None:
+            stop = (swing.price - buffer) if brk.is_long else (swing.price + buffer)
+            if (stop < brk.close) if brk.is_long else (stop > brk.close):
+                return stop
+
+        # The pivot is missing, or price has already run past it, so there is
+        # no structural level to risk against. Use a volatility-scaled stop
+        # rather than refusing the trade: for an always-in system, declining to
+        # flip means sitting out the trend entirely until some fresh setup
+        # qualifies, which can be months.
+        if fallback <= 0:
             return None
-        if brk.is_long:
-            stop = swing.price - buffer
-            return stop if stop < brk.close else None
-        stop = swing.price + buffer
-        return stop if stop > brk.close else None
+        return brk.close - fallback if brk.is_long else brk.close + fallback
 
     # --- management -------------------------------------------------------
     def open_position(self, signal: Signal, contracts: int) -> Position:
@@ -392,6 +400,16 @@ class ToriStrategy:
 
         line = pos.broken_line(reason)
         direction = "short" if pos.is_long else "long"
+
+        # The point of the top-down read, applied to the flip. If every
+        # timeframe above is bullish, the break of an ascending line is a
+        # pullback starting, not a downtrend -- so close the long, but do not
+        # sell into a bull market. The engine goes flat and waits for a setup
+        # pointing the way the larger trend already points.
+        if self.alignment is not None and self.cfg.htf_align != "none":
+            if not self.alignment.agrees(i, direction, self.cfg.htf_align):
+                return None
+
         c = self.candles[i]
         level = line.value_at(i)
         displacement = abs(c.close - level)
