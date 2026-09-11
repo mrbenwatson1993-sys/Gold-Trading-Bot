@@ -358,6 +358,89 @@ on 4H the filter improves *every* touch bucket and *both* regimes, which a pure
 fluke would not do. That is a hypothesis worth testing properly on real GC
 futures over a decade — not a result.
 
+## 16 years of 4-hour gold, 2007-2023 -- the definitive test
+
+`data/gold_4h_16y.csv` is 26,630 4H bars from 2007 to 2023: the 2008 crash,
+the 2011 top, the 2011-2015 bear, the 2016-2019 range, the 2020 COVID spike
+and the 2022 rate shock. Zero OHLC integrity violations, no gaps, ~1,600 bars
+a year. This is 8x the earlier 4H sample and it is the timeframe every
+promising result in this project lived on. Reproduce with `analysis/deep4h.py`.
+
+**Nothing that looked good on 18 months survived it.**
+
+### Higher-timeframe alignment: gone
+
+On 18 months it took 4H from +0.266R/PF 1.80 to +0.577R/PF 3.27. Over 16 years
+(always-in, swing 5):
+
+| touches | no filter | soft | majority |
+|---|---|---|---|
+| any 2+ | +0.030R | +0.034R | +0.025R |
+| 3 only | +0.045R | +0.039R | +0.003R |
+| 3+ | +0.030R | +0.040R | — |
+
+The effect is gone. What looked like the strongest signal in the project was
+an artifact of 108 trades in one bull market.
+
+### Three touches: a real but tiny edge
+
++0.045R against +0.030R for any-2+, on 1,801 trades. It points the way Tori
+says it does, and it is nowhere near large enough to build on.
+
+### Swing strength: fitted, not structural
+
+| swing | trades | expectancy | PF | return | max DD |
+|---|---|---|---|---|---|
+| 2 | 2045 | +0.071R | 1.12 | +143.9% | 20.2% |
+| 3 | 1945 | +0.084R | 1.14 | **+158.2%** | 20.6% |
+| 5 | 1483 | +0.040R | 1.07 | +53.4% | 38.5% |
+| 8 | 869 | +0.033R | 1.03 | +9.8% | 22.6% |
+| 12 | 597 | +0.223R | 1.37 | +103.3% | 18.2% |
+
+Non-monotonic and directly contradicting the GC daily sweep, where 5 dominated
+and 3 was mediocre. A parameter whose optimum jumps between datasets is fitted
+to the dataset.
+
+### It fails in the most recent era
+
+Always-in, swing 5, 3+ touches, soft agreement:
+
+| era | n | expectancy | PF | return | max DD | buy & hold |
+|---|---|---|---|---|---|---|
+| 2007-2010 | 294 | +0.075R | 1.20 | +19.2% | 12.6% | +118.0% |
+| 2011-2014 | 390 | **+0.140R** | 1.28 | **+47.6%** | 14.4% | **−15.2%** |
+| 2015-2018 | 376 | +0.031R | 1.05 | +7.3% | 21.0% | +7.7% |
+| **2019-2023** | 464 | **−0.028R** | **0.89** | **−19.1%** | 42.4% | +50.3% |
+| ALL | 1483 | +0.040R | 1.07 | +53.4% | 38.5% | **+198.5%** |
+
+One genuinely encouraging row: 2011-2014, the strategy returned +47.6% while
+gold fell 15.2%. Making money in a bear market is what a trend-following
+system is for, and it did it. But the most recent five years lose money, and
+over the whole period +53.4% at 38.5% drawdown against buy-and-hold's +198.5%
+is not a business.
+
+Going flat between setups is better risk-adjusted than always-in (+0.085R,
+PF 1.22, 7.3% drawdown against +0.040R, PF 1.07, 38.5%) at a fifth of the
+trades and a quarter of the return.
+
+### Is the spot proxy legitimate? Yes.
+
+Deep intraday *futures* history is paywalled -- FirstRate's free GC sample is
+two weeks, which is 67 4H bars. But that sample overlaps the PAXG series, so
+the proxy is testable rather than assumed (`analysis/proxy_check.py`).
+
+The first measurement said the two were uncorrelated (0.11), which is not
+credible for the same metal. It was a timezone bug: the futures export is
+stamped in exchange-local time. **At +4h, correlation is 0.9930.** With the
+futures basis (+46.8 points, 1.30 ATR of pure carry) removed, high and low
+disagreement is 0.171 and 0.194 ATR, with 92% of highs and 100% of lows inside
+the 0.45 ATR touch tolerance.
+
+So spot is a sound stand-in for trendline work — **but only once timestamps are
+aligned.** If you import a broker CSV stamped in local time and the engine
+treats it as UTC, the daily and weekly bars used for alignment are cut at the
+wrong hour, and the higher-timeframe read is quietly wrong.
+
 ## Real COMEX gold futures, 2008-2018
 
 Everything above this ran on 18 months of a spot proxy in one bull market.

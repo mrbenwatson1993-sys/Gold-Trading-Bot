@@ -68,7 +68,15 @@ def load_csv(path: str) -> list[Candle]:
     # utf-8-sig strips the byte-order mark spreadsheet exports leave behind,
     # which otherwise turns the first column name into "\ufeffDate".
     with open(path, newline="", encoding="utf-8-sig") as fh:
-        reader = csv.DictReader(fh)
+        # Exports are "CSV" by extension and tab- or semicolon-separated in
+        # practice, so sniff rather than assume.
+        sample = fh.read(8192)
+        fh.seek(0)
+        try:
+            dialect = csv.Sniffer().sniff(sample, delimiters=",\t;|")
+        except csv.Error:
+            dialect = csv.excel
+        reader = csv.DictReader(fh, dialect=dialect)
         if reader.fieldnames is None:
             raise ValueError(f"{path}: empty or headerless CSV")
         cols = {name.strip().strip('"').lstrip("\ufeff").lower(): name
