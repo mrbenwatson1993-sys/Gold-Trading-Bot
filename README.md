@@ -14,6 +14,43 @@ There is **no profit target**. The only fixed quantity in the system is the
 initial risk; the reward is whatever price hands you before it breaks back
 through the opposing line. Price decides the entry and price decides the exit.
 
+## Below 1H it collapses -- and 1 minute is pure noise
+
+5, 3 and 1 minute were tested the same way: the lines stay on the monthly,
+weekly and daily, only the entry chart changes. Period-matched on identical
+data so the comparison is fair (gold, 2020-2023):
+
+| entry | RR | expectancy | PF | PF with all costs removed |
+|---|---|---|---|---|
+| 1h | 3.04 | +0.039R | 0.90 | 0.92 |
+| 15m | 3.24 | +0.009R | 0.87 | 0.92 |
+| **5m** | 1.98 | −0.248R | **0.56** | 0.63 |
+| **3m** | 1.99 | −0.341R | **0.51** | 0.60 |
+| **1m** | **0.93** | −0.723R | **0.12** | 0.19 |
+
+GBPUSD over its own windows agrees: 1h 0.98, 15m 0.79, 5m 0.37, 1m 0.15 with
+a **7.8% win rate**. Gold's 1m run wins 15.6% of the time at 0.93 reward to
+risk.
+
+**It is not costs.** Stripping commission and slippage entirely still leaves
+1m at 0.19 and 5m at 0.63. The collapse is structural.
+
+**What actually breaks is the reward-to-risk.** It holds near 3.0 down to 15
+minutes and then falls off a cliff: 1.98 at 5m, 0.93 at 1m. That is the
+mechanism. A daily trendline break predicts a move that takes days to play
+out; a stop placed at 5-minute scale sits *inside the noise of that move*, so
+price takes the stop out before the move it correctly predicted ever happens.
+At 1 minute the wins are no bigger than the losses at all -- the asymmetry the
+whole strategy depends on is gone.
+
+So **1H is the floor**, and the trade frequency it gives is the real ceiling:
+about 7 a month across three markets, 8.6 adding EURUSD. If that is not
+enough, the answer is more markets, not faster charts.
+
+(Caveat on the 3m and 1m rows: those series are only ~200 days, so they are
+thin and confined to 2023. But they point the same way as 5m, which has 2.8
+years, and 15m, which has 8.)
+
 ## Entry timeframe: 1H doubles the trade count for free
 
 The lines stay on the monthly, weekly and daily. Only the chart the break is
