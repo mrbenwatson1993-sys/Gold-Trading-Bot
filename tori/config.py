@@ -76,6 +76,12 @@ class StrategyConfig:
     # winner can breathe. "recent" re-anchors to the last two swings instead,
     # which produces a much steeper line that cuts trends short.
     safety_anchor: str = "origin"
+    # A line, once drawn, does not move. The Action Line is fixed at the break
+    # and only extended; with this False the Safety Line behaves the same way
+    # -- drawn once from the new structure and then left alone. Redrawing it
+    # to each new higher low walks it up towards price and ends the trade
+    # early, which removes the long runs. What moves is the STOP, not the line.
+    safety_line_redraw: bool = True
     # The Safety Line gets its own, coarser swing setting. Detecting trendline
     # touches wants sensitivity; deciding "has the trend actually broken" wants
     # the opposite. At the detection strength every three-bar dip counts as a

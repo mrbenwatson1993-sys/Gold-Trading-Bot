@@ -339,6 +339,11 @@ class ToriStrategy:
         if not pool:
             return
 
+        # A drawn line stays drawn. Only the stop advances.
+        if not cfg.safety_line_redraw and pos.safety_line is not None:
+            self._ratchet_structural_stop(pos, pool[-1], i)
+            return
+
         if cfg.safety_anchor == "origin":
             # Keep the near end pinned to where the new trend began and swing
             # the far end up to the newest higher low. A line drawn across the
@@ -382,12 +387,21 @@ class ToriStrategy:
                 return   # never loosen a stop
         pos.safety_line = line
 
-        # Ratchet the resting stop to the newer structural pivot.
-        buffer = cfg.initial_stop_buffer_atr * self.atr[i]
-        candidate = b.price - buffer if pos.is_long else b.price + buffer
+        self._ratchet_structural_stop(pos, b, i)
+
+    def _ratchet_structural_stop(self, pos: Position, pivot: Swing, i: int) -> None:
+        """Move the stop up to the previous higher low (down to the previous
+        lower high for a short), chasing price to lock in profit.
+
+        It only ever moves in the trade's favour, and it sits below the Safety
+        Line rather than on it -- the line keeps rising past the swing it was
+        anchored to, so stopping at the swing leaves the trade more room.
+        """
+        buffer = self.cfg.initial_stop_buffer_atr * self.atr[i]
+        candidate = pivot.price - buffer if pos.is_long else pivot.price + buffer
         if (candidate > pos.hard_stop) if pos.is_long else (candidate < pos.hard_stop):
             pos.hard_stop = candidate
-            pos.structural_anchor = b
+            pos.structural_anchor = pivot
 
     def reversal(self, pos: Position, i: int, reason: str) -> Signal | None:
         """Turn an exit into the entry for the opposite direction.
