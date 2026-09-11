@@ -28,6 +28,10 @@ from .config import StrategyConfig
 from .swings import Swing, find_swings, find_swings_prominent
 from .trendlines import Trendline, build_trendlines
 
+# The rules for drawing a higher-timeframe line are defined relative to
+# this, so the lines do not change when the entry timeframe does.
+REFERENCE_SECONDS = 14_400      # 4h
+
 # Coarsest first; only timeframes above the traded one are used.
 LADDER: tuple[tuple[str, int], ...] = (
     ("1M", 2_592_000), ("1w", 604_800), ("1d", 86_400),
@@ -99,7 +103,13 @@ def build_projected_book(candles: list[Candle], cfg: StrategyConfig,
         # chart's numbers unchanged demands 60 monthly bars -- five years of
         # an unbroken line -- which nothing satisfies, so the monthly
         # contributed exactly zero lines before this.
-        ratio = seconds / base_seconds
+        #
+        # Scaled from a FIXED reference, not from the traded chart: the daily
+        # line is the daily line whether you enter on the 4-hour or the
+        # 5-minute. Scaling off the base would silently redraw the higher
+        # timeframes every time the entry chart changed, which would make any
+        # comparison between entry timeframes meaningless.
+        ratio = seconds / REFERENCE_SECONDS
         tf_cfg = replace(
             cfg.for_timeframe(seconds),
             min_age_bars=max(5, round(cfg.min_age_bars / ratio)),

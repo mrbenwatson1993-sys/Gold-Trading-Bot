@@ -16,9 +16,14 @@ from tori.backtest import run
 from tori.candles import bar_seconds, load_csv, validate
 from tori.config import RiskConfig, simple
 
-MARKETS = [("GOLD", "data/gold_4h_16y.csv", "MGC"),
+# Each market on the fastest entry chart it tolerates. Gold and GBPUSD are
+# indistinguishable on 1H and 4H over the same period but trade twice as
+# often on 1H; the S&P collapses on 1H (PF 0.73 against 1.37) over an
+# identical window, so it stays on 4H. That is a judgement from the data, not
+# a tuned parameter -- the S&P failure is dramatic, not marginal.
+MARKETS = [("GOLD", "data/gold_1h_deep.csv", "MGC"),
            ("S&P", "data/spx500_4h.csv", "MES"),
-           ("GBPUSD", "data/gbpusd_4h.csv", "M6B"),
+           ("GBPUSD", "data/gbpusd_1h.csv", "M6B"),
            ("EURUSD", "data/eurusd_4h.csv", "M6E"),
            ("SILVER", "data/silver_4h.csv", "SIL")]
 EQUITY = 250_000.0

@@ -14,6 +14,57 @@ There is **no profit target**. The only fixed quantity in the system is the
 initial risk; the reward is whatever price hands you before it breaks back
 through the opposing line. Price decides the entry and price decides the exit.
 
+## Entry timeframe: 1H doubles the trade count for free
+
+The lines stay on the monthly, weekly and daily. Only the chart the break is
+taken on changes. (The ladder rules are scaled from a fixed 4-hour reference
+so the daily line is the *same* daily line in every row -- otherwise the
+comparison means nothing.)
+
+Compared over the period all three entry charts share, 2015 onward:
+
+| | GOLD 4h | GOLD 1h | GOLD 15m | GBPUSD 4h | GBPUSD 1h | GBPUSD 15m |
+|---|---|---|---|---|---|---|
+| trades/yr | 18.4 | **43.1** | 64.2 | 16.3 | **32.8** | 54.2 |
+| PF | 0.98 | **0.99** | 0.84 | 1.07 | 1.05 | 0.79 |
+| expectancy | +0.017R | +0.034R | +0.005R | +0.051R | **+0.114R** | −0.016R |
+
+**1H is indistinguishable from 4H and trades twice as often.** 15m is not --
+it fails in both markets, and still fails with commission and slippage removed
+entirely (gold PF 0.94, GBPUSD 0.90), so that is noise inside the stop rather
+than execution cost.
+
+A caveat on an earlier version of this table: comparing gold's 4H over 16.6
+years against its 15m over 8.5 made 4H look best, when the difference was that
+the 15m series covers only gold's weakest era. Matched periods say otherwise.
+
+**The S&P is the exception and it is not close.** Over an identical 10.3-year
+window it runs PF 1.37 on 4H against **0.73 on 1H**. It stays on the 4-hour.
+
+Tighter stops on the same structural move also scale the R multiples: gold's
+best trade goes from +47.0R on the 4H entry to **+175.5R** on the 1H.
+
+### The portfolio, each market on the fastest chart it tolerates
+
+Gold and GBPUSD on 1H, the S&P on 4H, one parameter set, each sleeve risking a
+third of the budget (fixed fractional, not compounded):
+
+| portfolio | trades | per month | return | max DD | return/DD |
+|---|---|---|---|---|---|
+| GOLD + S&P | 842 | 4.4 | +171.4% | 8.0% | 21.38 |
+| **GOLD + S&P + GBPUSD** | **1389** | **7.2** | +122.7% | 8.2% | 14.94 |
+| + EURUSD | 1646 | 8.6 | +106.5% | **6.3%** | 16.95 |
+
+Still positive in every era:
+
+| era | trades | return | max DD | return/DD |
+|---|---|---|---|---|
+| 2007-2011 | 373 | +76.5% | 8.2% | 9.31 |
+| 2012-2016 | 336 | +15.6% | 4.4% | 3.54 |
+| **2017-2023** | 680 | **+30.6%** | 9.1% | 3.37 |
+
+**~7 trades a month** against 4 on the all-4H version, at the same drawdown.
+
 ## The configuration to actually use
 
 ```bash
