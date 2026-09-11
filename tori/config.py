@@ -68,6 +68,19 @@ class StrategyConfig:
     # market for months waiting on a fresh qualifying setup. This is the
     # fallback distance, in ATR, so the flip still happens with defined risk.
     fallback_stop_atr: float = 1.5
+    # Minimum distance, in ATR, between price and any stop -- initial or
+    # trailed. A stop cannot protect against a market that reopens past it,
+    # and markets differ enormously in how often that happens: on this data
+    # the S&P gaps more than 1 ATR on 1.00% of bars against gold's 0.11%, with
+    # a worst gap of 11.3 ATR against 2.4. A stop hugging the line is fine on
+    # gold and is repeatedly leapt over on an index, which turns a positive
+    # signal into a negative expectancy.
+    #
+    # Set auto_gap_stop_pct to calibrate this from the instrument's own gap
+    # distribution instead of guessing: the stop is kept at least as far away
+    # as that percentile of historical gaps, so gappy markets widen themselves.
+    min_stop_atr: float = 0.0
+    auto_gap_stop_pct: float = 0.0     # e.g. 99.0; 0 disables
     safety_only_improves: bool = True  # the line ratchets, never loosens
     # Where the Safety Line is anchored, and it matters enormously.
     # "origin" fixes the first anchor at the low the new trend started from --

@@ -217,6 +217,29 @@ def validate(candles: list[Candle], repair: bool = True) -> tuple[list[Candle], 
     return (fixed if repair else candles), report
 
 
+def gap_profile(candles: list[Candle], period: int = 14) -> dict:
+    """How far this instrument reopens away from the previous close, in ATR.
+
+    A stop is a promise that cannot be kept across a gap, so the size of the
+    gaps an instrument actually makes is what decides how close a stop may
+    safely sit. Returned in ATR so it is comparable across markets.
+    """
+    atr = atr_series(candles, period)
+    gaps = sorted(abs(b.open - a.close) / atr[i]
+                  for i, (a, b) in enumerate(zip(candles, candles[1:]))
+                  if atr[i] > 0)
+    if not gaps:
+        return {"n": 0}
+
+    def pct(p: float) -> float:
+        return gaps[min(len(gaps) - 1, int(len(gaps) * p / 100.0))]
+
+    return {"n": len(gaps), "mean": sum(gaps) / len(gaps), "worst": gaps[-1],
+            "p50": pct(50), "p90": pct(90), "p95": pct(95), "p99": pct(99),
+            "p999": pct(99.9),
+            "over_1atr": sum(1 for g in gaps if g > 1) / len(gaps) * 100}
+
+
 def bar_seconds(candles: list[Candle]) -> int:
     """Infer the bar size from the series (median gap, robust to weekend gaps)."""
     if len(candles) < 3:

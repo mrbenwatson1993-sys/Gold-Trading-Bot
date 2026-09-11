@@ -22,7 +22,7 @@ from tori.config import RiskConfig, simple
 RISK = RiskConfig(symbol="MGC", starting_equity=250_000, risk_pct=1.0)
 BASE_SECONDS = 14400          # the 4H settings are the reference
 
-FILES = sys.argv[1:] or ["data/gold_4h_16y.csv"]
+FILES = [a for a in sys.argv[1:] if not a.startswith("--")] or ["data/gold_4h_16y.csv"]
 print(f"  {'tf':>4} {'scaling':<10} {'age':>5} {'sw':>3} {'safe':>5} {'n':>6} "
       f"{'hold':>6} {'days':>5} {'wick%':>7} {'expR':>8} {'PF':>6} {'worst':>7} "
       f"{'best':>7} {'ret%':>9} {'DD%':>6}", flush=True)
@@ -36,10 +36,19 @@ for path in FILES:
                    safety_line_redraw=False, stop_on_close_only=False,
                    stop_close_confirm_in_profit=True, trail_buffer_atr=0.50,
                    min_touches=3, max_touches=99)
+    only = [v for v in sys.argv if v.startswith("--only=")]
     variants = [("same bars", 1)] + ([("same time", ratio)] if ratio > 1 else [])
+    if only:
+        want = only[0].split("=", 1)[1]
+        variants = [v for v in variants if v[0].replace(" ", "") == want]
     for label, k in variants:
+        # max_anchor_lookback has to scale too. Leaving it at 400 while the
+        # age rule asks for 960 bars makes a qualifying line impossible to
+        # build -- the first run of this reported "no trades" on 15m for
+        # exactly that reason, which was a bug in the harness, not a finding.
         cfg = replace(cfg0, min_age_bars=60 * k, swing_strength=3 * k,
-                      safety_swing_strength=12 * k, min_touch_gap_bars=6 * k)
+                      safety_swing_strength=12 * k, min_touch_gap_bars=6 * k,
+                      max_anchor_lookback=max(400, 400 * k))
         r = run(cs, cfg, RISK)
         s = r.stats
         if not s.get("trades"):

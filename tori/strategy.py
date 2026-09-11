@@ -289,10 +289,17 @@ class ToriStrategy:
         swing = last_swing_before(
             [s for s in self.swings if s.confirmed_at <= i], i, pivot)
 
+        floor = self.cfg.min_stop_atr * atr_ref
+
         if swing is not None:
             stop = (swing.price - buffer) if brk.is_long else (swing.price + buffer)
             if (stop < brk.close) if brk.is_long else (stop > brk.close):
-                return stop
+                # Never closer than the instrument's own gap risk. A stop
+                # inside that distance is routinely leapt over rather than
+                # filled, so the trade risks more than it was sized for.
+                if brk.is_long:
+                    return min(stop, brk.close - floor)
+                return max(stop, brk.close + floor)
 
         # The pivot is missing, or price has already run past it, so there is
         # no structural level to risk against. Use a volatility-scaled stop
@@ -592,5 +599,14 @@ class ToriStrategy:
         buffer = self.cfg.trail_buffer_atr * self.atr[i]
         nxt = pos.safety_line.value_at(i + 1)
         candidate = nxt - buffer if pos.is_long else nxt + buffer
+
+        # Hold the stop at least a gap's distance from price. Trailing it
+        # tighter than the instrument gaps means it stops being a stop: price
+        # reopens past it and the fill is wherever the market felt like.
+        floor = self.cfg.min_stop_atr * self.atr[i]
+        if floor > 0:
+            close = self.candles[i].close
+            candidate = (min(candidate, close - floor) if pos.is_long
+                         else max(candidate, close + floor))
         if (candidate > pos.hard_stop) if pos.is_long else (candidate < pos.hard_stop):
             pos.hard_stop = candidate

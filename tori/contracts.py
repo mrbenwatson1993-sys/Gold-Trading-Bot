@@ -84,6 +84,17 @@ REGISTRY: dict[str, Contract] = {
     "ZN":  Contract("ZN",  "10-Year T-Note",         0.015625,15.625, 2.00),
     "6E":  Contract("6E",  "Euro FX",                0.00005,6.25, 2.50),
     "6J":  Contract("6J",  "Japanese Yen",           0.0000005, 6.25, 2.50),
+    "6B":  Contract("6B",  "British Pound",          0.0001, 6.25, 2.50),
+    "6A":  Contract("6A",  "Australian Dollar",      0.0001,10.00, 2.50),
+    # Micro FX. Sized so a 1% risk budget can hold a position on a retail
+    # account; the majors are all quoted around 1.0 so one spec covers them.
+    "M6E": Contract("M6E", "Micro Euro FX",          0.0001, 1.25, 0.50),
+    "M6B": Contract("M6B", "Micro British Pound",    0.0001, 0.625, 0.50),
+    "M6A": Contract("M6A", "Micro Australian Dollar",0.0001, 1.00, 0.50),
+    # Yen pairs quote around 150 rather than 1.0, so they need their own
+    # scale. This approximates the economics of a micro yen position rather
+    # than reproducing 6J exactly (6J is quoted the other way up).
+    "M6J": Contract("M6J", "Micro Yen (USDJPY quote)", 0.01, 1.00, 0.50),
     # Pseudo-instrument: 1 unit = 1 point, no leverage. For spot/CFD series.
     "SPOT": Contract("SPOT", "Spot / CFD (1 unit)",  0.01,   0.01, 0.00),
 }

@@ -16,6 +16,7 @@ direction for the error to run.
 from __future__ import annotations
 
 from collections import Counter
+from dataclasses import replace
 from dataclasses import dataclass, field
 
 from .candles import Candle, atr_series, bar_seconds
@@ -50,6 +51,15 @@ def run(candles: list[Candle], cfg: StrategyConfig | None = None,
         cfg = cfg.for_timeframe(bs)
 
     contract = get_contract(risk.symbol)
+
+    # Calibrate the stop's minimum distance to this instrument's own gaps.
+    if cfg.auto_gap_stop_pct > 0:
+        from .candles import gap_profile
+        prof = gap_profile(candles, cfg.atr_period)
+        key = f"p{int(cfg.auto_gap_stop_pct)}"
+        floor = prof.get(key, prof.get("p99", 0.0))
+        cfg = replace(cfg, min_stop_atr=max(cfg.min_stop_atr, floor))
+
     atr = atr_series(candles, cfg.atr_period)
     alignment = None
     if cfg.htf_align != "none":

@@ -358,6 +358,96 @@ on 4H the filter improves *every* touch bucket and *both* regimes, which a pure
 fluke would not do. That is a hypothesis worth testing properly on real GC
 futures over a decade — not a result.
 
+## Why it pays on metals and not on indices, crude or forex
+
+The obvious explanations were tested first and all of them are wrong.
+
+**Not the timescale.** Every market has the same swing rhythm once normalised
+by ATR: a 5.0-bar median gap between swings, 2.2-2.4 ATR legs, 0.146-0.159
+trend efficiency -- gold, the S&P, Brent and the forex majors are
+indistinguishable (`analysis/natural_scale.py`). Sweeping the scale from x0.33
+to x4 never makes the S&P or the NASDAQ profitable at any setting
+(`analysis/why_markets.py`). The x2 that suited silver and the x4 that suited
+Brent were fitting, not structure.
+
+**Not the signal strength, as first measured.** The raw break edge -- mean
+MFE minus MAE over the 30 bars after a break, in ATR -- actually ranks the
+S&P (+0.404) *above* gold (+0.246).
+
+**Gaps are real but secondary.** Instruments differ enormously in how far they
+reopen past the previous close, and a stop cannot be kept across a gap:
+
+| market | gaps >1 ATR | 99th pct | worst |
+|---|---|---|---|
+| GOLD | 0.11% | 0.21 ATR | 2.4 ATR |
+| SILVER | 0.16% | 0.30 ATR | 3.9 ATR |
+| S&P | **1.00%** | **1.00 ATR** | **11.3 ATR** |
+| NASDAQ | **1.02%** | 1.01 ATR | 9.2 ATR |
+| BRENT | 0.81% | 0.88 ATR | **12.6 ATR** |
+| EURUSD | 0.19% | 0.35 ATR | 7.6 ATR |
+
+With ~50-bar holds a gold trade meets a >1 ATR gap about 5% of the time and an
+S&P trade about 40%. `auto_gap_stop_pct` now calibrates the stop's minimum
+distance from each instrument's own gap distribution, and it helps -- the S&P
+goes from -5.8% to +1.2% -- but it does not rescue them.
+
+### The actual answer
+
+Compare each break against a control: the same measurement taken at *random*
+bars with the same long/short mix. That subtracts the market's drift and
+leaves only what the trendline break itself contributes
+(`analysis/significance.py`):
+
+| market | break edge | t | control | **break adds** |
+|---|---|---|---|---|
+| GOLD | +0.246 | +2.20 | −0.182 | **+0.428** |
+| SILVER | +0.572 | **+4.21** | +0.170 | **+0.402** |
+| S&P | +0.404 | +2.09 | **+0.439** | **−0.035** |
+| NASDAQ | +0.207 | +1.13 | +0.121 | +0.086 |
+| BRENT | −0.168 | −1.20 | −0.040 | −0.128 |
+| EURUSD | −0.129 | −1.26 | +0.034 | −0.163 |
+
+**On the S&P a random bar pays as well as a trendline break.** The apparent
++0.404 edge is entirely drift -- the control is larger than the signal. Same
+for the NASDAQ, Brent and EURUSD, where the break adds nothing or less.
+
+Only the metals show the break contributing something a random entry does not,
+and only silver clears statistical significance on its own (t = 4.21); gold is
+marginal (t = 2.20).
+
+So the honest answer to "why can't it work on anything?" is that **the
+information is not there to extract.** It is not a tuning problem, a timescale
+problem or a gap problem -- in those markets the break of a trendline does not
+predict what price does next. No stop rule, touch count or timeframe can
+monetise a signal that is not present.
+
+**The caveat that matters.** This is a finding about *this mechanisation* of a
+trendline -- swing pivots at a fixed strength, ATR tolerances, a validity
+screen. A person drawing lines by eye brings judgement this does not capture,
+and it is entirely possible the human version carries information where the
+mechanical one does not. What can be said is that the rules as written here do
+not transfer, and that two markets out of nine -- one of them only marginally
+significant -- is also what "no edge anywhere, and gold and silver got lucky"
+would look like.
+
+### What still helps everywhere
+
+Gap-calibrated stops plus restricting to the side the larger trend favours
+lifts every market, including the ones with no measurable signal:
+
+| market | base | gap-calibrated | + long-only |
+|---|---|---|---|
+| GOLD | +133.4% (DD 22.4%) | +113.3% | +108.3% (**DD 14.1%**) |
+| SILVER | +7.8% (DD 24.9%) | +12.1% | **+35.6%** (DD 14.2%) |
+| S&P | −5.8% (DD 28.3%) | +1.2% | **+15.6%** (DD 17.3%) |
+| NASDAQ | −18.9% | −21.4% | +4.0% |
+| BRENT | +12.2% | — | **+43.8%** |
+
+Read that last column sceptically. 2007-2023 is mostly a bull market, so
+"longs only" may be fitting the sample rather than finding a rule -- though
+silver fell 25% and Brent fell 11% over their windows and long-only still won
+there, which is harder to explain as drift alone.
+
 ## Which timeframe? Any of them -- but scale the settings by TIME, not bars
 
 The settings are counted in bars, so the obvious assumption is that structure
