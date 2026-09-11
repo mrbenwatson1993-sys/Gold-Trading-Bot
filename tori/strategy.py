@@ -100,7 +100,8 @@ class Position:
         the same break, read from the other side.
         """
         if reason in ("safety line", "stop", "stop (wicked)",
-                      "hard stop") and self.safety_line is not None:
+                      "stop (confirmed)", "hard stop"
+                      ) and self.safety_line is not None:
             return self.safety_line
         return self.action_line
 
@@ -484,12 +485,27 @@ class ToriStrategy:
                 gapped = (c.open < pos.hard_stop) if pos.is_long else (c.open > pos.hard_stop)
                 return (c.open if gapped else c.close), "stop (close)"
         else:
-            hit = (c.low <= pos.hard_stop) if pos.is_long else (c.high >= pos.hard_stop)
-            if hit:
-                fill = (min(pos.hard_stop, c.open) if pos.is_long
-                        else max(pos.hard_stop, c.open))
-                return fill, ("stop (wicked)" if self._wicked_out(pos, c, i)
-                              else "stop")
+            # A stop that has trailed to breakeven or better is no longer
+            # protecting the account, it is protecting profit -- so let a
+            # close decide it and a wick cannot end the trade. A stop still
+            # below entry is the real risk cap and must fill intrabar.
+            locked_in = ((pos.hard_stop >= pos.entry_price) if pos.is_long
+                         else (pos.hard_stop <= pos.entry_price))
+            if locked_in and self.cfg.stop_close_confirm_in_profit:
+                hit = ((c.close <= pos.hard_stop) if pos.is_long
+                       else (c.close >= pos.hard_stop))
+                if hit:
+                    gapped = ((c.open < pos.hard_stop) if pos.is_long
+                              else (c.open > pos.hard_stop))
+                    return (c.open if gapped else c.close), "stop (confirmed)"
+            else:
+                hit = ((c.low <= pos.hard_stop) if pos.is_long
+                       else (c.high >= pos.hard_stop))
+                if hit:
+                    fill = (min(pos.hard_stop, c.open) if pos.is_long
+                            else max(pos.hard_stop, c.open))
+                    return fill, ("stop (wicked)" if self._wicked_out(pos, c, i)
+                                  else "stop")
 
         self.update_safety_line(pos, i)
 

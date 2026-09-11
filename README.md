@@ -379,6 +379,47 @@ With that in place, holds go to ~50 bars -- eight days on a 4H chart -- which
 is the timescale the method is described at, rather than the 9 bars the older
 two-line version produced.
 
+### How the stop should trigger
+
+Three options, and the "worst" column is the one that decides between them --
+it is the largest single loss in R, so it says whether the risk cap survived.
+
+  * **intrabar** -- the stop always fills on a touch. Risk is capped, but a
+    spike ends winners that structure never invalidated.
+  * **hybrid** -- intrabar while the stop is still below entry (the real risk
+    cap), close-confirmed once it has trailed to breakeven or better. A wick
+    cannot take a winning trade; the worst case on that side is giving back
+    open profit.
+  * **close** -- always waits for a close beyond the stop. Kills wick-outs
+    entirely, and the risk cap with them.
+
+16 years of 4H gold, 3+ touches:
+
+| trigger | dist | trades | hold | wick% | expectancy | PF | **worst** | return | max DD |
+|---|---|---|---|---|---|---|---|---|---|
+| intrabar | 0.10 | 476 | 48.2 | 38.7% | +0.153R | 1.14 | −1.18R | +54.0% | 29.4% |
+| intrabar | 0.50 | 444 | 51.2 | 28.2% | +0.259R | 1.30 | −1.18R | +114.1% | 22.7% |
+| hybrid | 0.10 | 442 | 51.9 | 19.9% | +0.239R | 1.26 | **−1.09R** | +103.1% | 23.7% |
+| **hybrid** | **0.50** | 415 | 54.4 | **14.9%** | **+0.293R** | **1.39** | **−1.09R** | **+134.6%** | **21.7%** |
+| close | 0.10 | 425 | 61.2 | 0.0% | +0.233R | 1.20 | **−2.31R** | +70.9% | 20.4% |
+| close | 0.50 | 409 | 63.7 | 0.0% | +0.251R | 1.26 | **−5.25R** | +84.8% | 17.2% |
+
+**The hybrid wins on every measure and keeps the guarantee.** It more than
+halves the wick-out rate against intrabar (28.2% to 14.9%), lifts expectancy
+from +0.259R to +0.293R and return from +114% to +135%, lowers drawdown, and
+the worst single loss is −1.09R -- the overshoot being gap risk on the open,
+which no stop prevents.
+
+Waiting for a close on *every* stop looks tempting because wick-outs go to
+zero, but the worst trade becomes −2.31R at a tight stop and **−5.25R** at a
+wide one. It buys a cleaner exit statistic with the one thing that must not be
+sold.
+
+Silver replicates the wick-out reduction (38.7% to 23.2% at 0.10 ATR, 17.9% at
+0.50) but not the profit: returns stay modest either way, and close-only is a
+disaster there -- −36.6% with a −5.80R worst trade. The mechanism travels; the
+payoff does not.
+
 ### The cost of a close stop, measured
 
 "wick%" is the share of exits where the stop was hit intrabar **and that same

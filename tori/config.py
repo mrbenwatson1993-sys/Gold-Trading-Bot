@@ -82,6 +82,15 @@ class StrategyConfig:
     # trade. Setting this False restores the older two-line model where a
     # close back through an opposing line also exits.
     exit_on_stop_only: bool = True
+    # How the stop triggers, split by whether it is still risking money.
+    #
+    # While the stop sits on the losing side of entry it fills intrabar, so
+    # the loss stays capped at what the trade was sized for -- that guarantee
+    # is not negotiable. Once it has trailed to breakeven or better it is only
+    # triggered by a CLOSE beyond it, so a spike cannot end a winning trade
+    # that structure never invalidated. The worst case on that side is giving
+    # back open profit, never more than the initial risk.
+    stop_close_confirm_in_profit: bool = True
     # A line, once drawn, does not move. The Action Line is fixed at the break
     # and only extended; with this False the Safety Line behaves the same way
     # -- drawn once from the new structure and then left alone. Redrawing it
