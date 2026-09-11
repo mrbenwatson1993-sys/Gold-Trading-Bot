@@ -290,6 +290,62 @@ over the first N bars of real gold, then over all of them, and every trade that
 settled before the cut must be identical. If any decision peeked at a future
 bar, the two runs would disagree.
 
+## Is this profitable? Not on this evidence.
+
+The best configuration found (4H, flat between setups) returns +26.5% with a
+5.2% drawdown and a 1.80 profit factor over 108 trades. Four tests say do not
+trust it.
+
+**Buy and hold beat it.** Gold went +41.2% over the same window. The strategy
+made +26.5%. It wins on risk-adjusted terms — 5.2% drawdown against 30.0% —
+but a trend system underperforming the raw trend in a bull market is a warning,
+not a result.
+
+**The profit is three trades.** Best 3 of 108 = 96% of all profit; the top 10%
+of trades = 154% of it, meaning everything else loses money net. That is a
+lottery ticket, not an edge, and live you will not get those three.
+
+**The edge halves out of sample.** Splitting 4H down the middle: first half
++0.473R with PF 2.59, second half **+0.047R with PF 1.07**. Nearly all
+performance came from the first half.
+
+**It does not catch big moves.** Only 4 of 108 trades exceeded 3R; two
+exceeded 5R. The average trade peaks at +1.15R and exits at +0.27R, giving
+back roughly three quarters of every favourable excursion.
+
+That last one looks like an exit problem, so the exit was slowed down — the
+Safety Line drawn from major swings instead of minor ones:
+
+| swing strength | trades | >=3R | best | avg peak | expectancy |
+|---|---|---|---|---|---|
+| 2 | 133 | 6 | +18.1R | +1.18R | +0.238R |
+| 3 (default) | 108 | 4 | +15.3R | +1.15R | +0.266R |
+| 5 | 95 | 4 | +10.6R | +1.15R | +0.182R |
+| 8 | 61 | 1 | +10.6R | +0.93R | +0.033R |
+| 16 | 27 | 1 | +3.5R | +1.30R | +0.149R |
+
+Slowing the exit makes runners **rarer**, not commoner, and average peak
+excursion sits near 1.15R at every setting. The moves are not being cut off
+early; in this sample they are not there. Reward:risk is a healthy 2.6:1, but
+it comes from many small wins against smaller losses — not from catching
+trends.
+
+**Costs:** 4H tolerates them (+10.6% at zero slippage, +9.6% at 1 tick, +1.6%
+at 4 ticks). Faster timeframes will not — 5m always-in takes 858 round turns.
+
+### What would change the answer
+
+- Real GC futures data over 10+ years and several regimes, not 18 months of a
+  spot proxy in one bull market.
+- The same test on instruments that are not gold. If the edge is really
+  "trendlines", it should not be fussy about the symbol.
+- An explanation for the out-of-sample decay before, not after, trusting it.
+- A profit distribution that survives deleting the best three trades.
+
+Until then this is a working research engine for an idea that is **not yet
+supported**, and the honest reading of every number above is "no signal", not
+"small edge".
+
 ## Limitations
 
 - One instrument, one regime, ~1.5 years, 106 trades. Not enough to conclude
