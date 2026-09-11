@@ -358,6 +358,65 @@ on 4H the filter improves *every* touch bucket and *both* regimes, which a pure
 fluke would not do. That is a hypothesis worth testing properly on real GC
 futures over a decade — not a result.
 
+## Real COMEX gold futures, 2008-2018
+
+Everything above this ran on 18 months of a spot proxy in one bull market.
+`data/GC_futures_daily.csv` is genuine GC daily OHLC across three regimes: the
+2008-2011 bull (+153%), the 2011-2015 bear (-44%), and the 2016-2018 range.
+Reproduce with `analysis/futures.py` and `analysis/best_config.py`.
+
+**Read the data caveat first.** 13.4% of the source rows had a close outside
+their own high-low range -- the close column and the OHLC columns were plainly
+sourced differently. `validate()` repairs this by widening the range to contain
+the open and close, which averages 0.154 ATR, inside the 0.45 ATR touch
+tolerance, so it should not move trendline detection much. It is still repaired
+data, and the repair lands exactly on the extremes the strategy draws from.
+
+### Swing strength dominates everything else
+
+A 65-configuration sweep put strength 5 in every top-ten result and strength 2
+in every bottom one. It matters far more than touch count or alignment:
+
+| swing strength | trades | expectancy | PF | return |
+|---|---|---|---|---|
+| 2 | 159 | −0.157R | 0.60 | −21.7% |
+| 3 (old default) | 158 | +0.047R | 1.07 | +3.8% |
+| **5** | 96 | **+0.241R** | **1.62** | **+21.3%** |
+| 8 | 99 | −0.044R | 0.85 | −4.1% |
+
+At strength 2 the detector calls every wiggle a pivot; at 5 it marks only
+structure a person would actually draw. **Every earlier test in this README ran
+at 3, which was hiding the result.** But note the peak is narrow and falls away
+on both sides — that is what a fitted parameter looks like.
+
+### Both of the strategy's own claims survive, at strength 5
+
+From the same sweep: three touches beats any-2+ (+0.317R against +0.202R), and
+soft higher-timeframe agreement beats no filter (+0.317R against +0.205R). Both
+effects point the same way they did on 4H spot, which is the first thing in
+this project to replicate across instrument, timeframe and decade.
+
+### And it still fails out of sample
+
+Best config: always-in, swing 5, 3+ touches, soft agreement.
+
+| window | n | win% | expectancy | PF | return | max DD | buy & hold |
+|---|---|---|---|---|---|---|---|
+| bull 08-11 | 20 | 45.0 | **+1.060R** | 4.94 | +20.9% | 2.0% | +152.9% |
+| bear 11-15 | 37 | 37.8 | +0.124R | 1.34 | +3.6% | 5.0% | −43.8% |
+| range 16-18 | 46 | 26.1 | −0.030R | 0.85 | −2.3% | 8.6% | +17.0% |
+| **1st half 08-13** | 43 | 46.5 | **+0.592R** | 2.82 | +25.0% | 2.3% | +62.6% |
+| **2nd half 14-18** | 66 | 22.7 | **−0.067R** | 0.77 | −4.8% | 8.6% | +2.0% |
+| ALL | 96 | 36.5 | +0.241R | 1.62 | +21.3% | 8.5% | +66.3% |
+
+The entire ten-year result is the 2008-2011 bull run. The second half is
+negative. The profile is coherent for a trend system -- strong in trends,
+breakeven in bears, losing in ranges -- but "profitable only when gold trends
+hard" is a description of the regime, not of an edge.
+
+Costs are not the problem here: +22.2% at zero slippage against +18.9% at four
+ticks. Ninety-six trades in a decade is cheap to run.
+
 ## Is this profitable? Not on this evidence.
 
 The best configuration found (4H, flat between setups) returns +26.5% with a

@@ -65,11 +65,14 @@ def load_csv(path: str) -> list[Candle]:
     be a unix timestamp or an ISO-8601 string.
     """
     out: list[Candle] = []
-    with open(path, newline="") as fh:
+    # utf-8-sig strips the byte-order mark spreadsheet exports leave behind,
+    # which otherwise turns the first column name into "\ufeffDate".
+    with open(path, newline="", encoding="utf-8-sig") as fh:
         reader = csv.DictReader(fh)
         if reader.fieldnames is None:
             raise ValueError(f"{path}: empty or headerless CSV")
-        cols = {name.strip().lower(): name for name in reader.fieldnames}
+        cols = {name.strip().strip('"').lstrip("\ufeff").lower(): name
+                for name in reader.fieldnames}
 
         def pick(*names: str) -> str:
             for n in names:
@@ -79,7 +82,8 @@ def load_csv(path: str) -> list[Candle]:
 
         tcol = pick("time", "timestamp", "date", "datetime", "ts", "open time")
         ocol, hcol = pick("open", "o"), pick("high", "h")
-        lcol, ccol = pick("low", "l"), pick("close", "c")
+        # "price" is what investing.com-style exports call the close.
+        lcol, ccol = pick("low", "l"), pick("close", "c", "price", "last")
         vcol = cols.get("volume") or cols.get("vol") or cols.get("v")
 
         for row in reader:
@@ -88,12 +92,33 @@ def load_csv(path: str) -> list[Candle]:
                 continue
             out.append(Candle(
                 ts=_parse_time(raw),
-                open=float(row[ocol]), high=float(row[hcol]),
-                low=float(row[lcol]), close=float(row[ccol]),
-                volume=float(row[vcol]) if vcol and row.get(vcol) else 0.0,
+                open=_num(row[ocol]), high=_num(row[hcol]),
+                low=_num(row[lcol]), close=_num(row[ccol]),
+                volume=_volume(row[vcol]) if vcol and row.get(vcol) else 0.0,
             ))
     out.sort(key=lambda c: c.ts)
     return _dedupe(out)
+
+
+def _num(raw: str) -> float:
+    """Parse a price from a real-world export.
+
+    Broker and investing.com downloads wrap numbers in quotes and put
+    thousands separators in them, so "1,229.80" has to survive the trip.
+    """
+    return float(str(raw).strip().replace(",", "").replace('"', "").replace("$", ""))
+
+
+def _volume(raw: str) -> float:
+    """Volume is often abbreviated: 199.65K, 1.2M."""
+    text = str(raw).strip().replace(",", "").replace('"', "").upper()
+    if not text or text == "-":
+        return 0.0
+    mult = {"K": 1e3, "M": 1e6, "B": 1e9}.get(text[-1:])
+    try:
+        return float(text[:-1]) * mult if mult else float(text)
+    except ValueError:
+        return 0.0
 
 
 def _parse_time(raw: str) -> int:
@@ -108,8 +133,10 @@ def _parse_time(raw: str) -> int:
     try:
         dt = datetime.fromisoformat(text)
     except ValueError:
+        text = raw.replace("Z", "+00:00").strip().strip('"')
         for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M", "%Y-%m-%d",
-                    "%d-%m-%Y %H:%M", "%m-%d-%Y"):
+                    "%b %d, %Y", "%B %d, %Y", "%d %b %Y", "%m/%d/%Y",
+                    "%d/%m/%Y", "%d-%m-%Y %H:%M", "%m-%d-%Y"):
             try:
                 dt = datetime.strptime(text, fmt)
                 break
@@ -137,6 +164,49 @@ def save_csv(candles: list[Candle], path: str) -> None:
         for c in candles:
             w.writerow([c.ts, f"{c.open:.6f}", f"{c.high:.6f}",
                         f"{c.low:.6f}", f"{c.close:.6f}", f"{c.volume:.4f}"])
+
+
+def validate(candles: list[Candle], repair: bool = True) -> tuple[list[Candle], dict]:
+    """Check OHLC integrity, and optionally repair what can be repaired.
+
+    Real exports are frequently inconsistent: the close sits outside the bar's
+    own high-low range, usually because the close column and the OHLC columns
+    were sourced differently (a settlement price against session prices, say).
+    That matters here more than in most strategies, because every trendline is
+    drawn through highs and lows and every entry is a close crossing one.
+
+    The repair widens the range to contain the open and close, which is the
+    weakest assumption available: the true high was at least the close. It
+    cannot invent the real extreme, so the report always states how many bars
+    were touched and by how much -- if that number is large, the data is not
+    fit for this strategy and no amount of repair changes it.
+    """
+    fixed: list[Candle] = []
+    broken = 0
+    total_shift = 0.0
+    worst = 0.0
+    for c in candles:
+        hi = max(c.high, c.open, c.close)
+        lo = min(c.low, c.open, c.close)
+        if hi != c.high or lo != c.low:
+            broken += 1
+            shift = (hi - c.high) + (c.low - lo)
+            total_shift += shift
+            worst = max(worst, shift)
+        fixed.append(Candle(c.ts, c.open, hi, lo, c.close, c.volume)
+                     if repair else c)
+    atrs = atr_series(candles, 14)
+    mean_atr = sum(atrs) / len(atrs) if atrs else 0.0
+    report = {
+        "bars": len(candles),
+        "inconsistent": broken,
+        "pct": broken / len(candles) * 100 if candles else 0.0,
+        "mean_shift": total_shift / broken if broken else 0.0,
+        "worst_shift": worst,
+        "mean_atr": mean_atr,
+        "shift_in_atr": (total_shift / broken / mean_atr) if broken and mean_atr else 0.0,
+    }
+    return (fixed if repair else candles), report
 
 
 def bar_seconds(candles: list[Candle]) -> int:
