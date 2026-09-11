@@ -54,6 +54,11 @@ class StrategyConfig:
     max_slope_atr_per_bar: float = 0.75   # reject vertical lines
     min_trend_atr: float = 3.0       # the line must span a real move
     max_anchor_lookback: int = 400   # bars of history considered per scan
+    # Which timeframes the tradable lines are drawn on. Empty means the traded
+    # chart's own swings, which is what every earlier result used. Set e.g.
+    # ("1d", "1w", "1M") to draw top-down and project the lines down, which is
+    # what the method actually prescribes.
+    line_timeframes: tuple = ()
 
     # --- "wait until price reaches the line" ------------------------------
     approach_atr: float = 2.5        # only arm lines price is near

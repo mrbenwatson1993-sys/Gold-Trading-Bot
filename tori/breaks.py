@@ -57,7 +57,7 @@ def detect_break(candles: list[Candle], line: Trendline, index: int,
     if index >= len(candles) or atr_ref <= 0:
         return None
     c = candles[index]
-    level = line.value_at(index)
+    level = line.at(index, c.ts)
     close_tol = cfg.max_close_violation_atr * atr_ref
 
     if line.kind == BEARISH:

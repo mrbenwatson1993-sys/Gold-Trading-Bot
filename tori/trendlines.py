@@ -44,6 +44,14 @@ class Trendline:
     anchor_ts: int = 0
     bar_seconds: int = 0
     timeframe: str = ""
+    # A line is linear in TIME, not in bar count, and real series are not
+    # evenly spaced -- gold's 4H chart carries ~1600 bars a year against 2190
+    # possible slots, because weekends are missing. For a line drawn on the
+    # chart being traded that does not matter: its anchor and slope are both
+    # in that chart's bars. For a line drawn on a higher timeframe and
+    # projected down it matters a great deal, so those are evaluated against
+    # the clock instead.
+    use_ts: bool = False
 
     # --- geometry ---------------------------------------------------------
     def value_at(self, index: int) -> float:
@@ -56,6 +64,15 @@ class Trendline:
     def value_at_ts(self, ts: int) -> float:
         """The line's price at a wall-clock time, on any timeframe."""
         return self.anchor_price + self.slope_per_second * (ts - self.anchor_ts)
+
+    def at(self, index: int, ts: int) -> float:
+        """The line's price on the bar being evaluated.
+
+        Use this rather than value_at() anywhere a line might have come from
+        another timeframe, so projected lines are read against the clock and
+        locally drawn ones against their own bars.
+        """
+        return self.value_at_ts(ts) if self.use_ts else self.value_at(index)
 
     @property
     def is_bearish(self) -> bool:
@@ -297,5 +314,5 @@ def _dedupe(lines: list[Trendline], as_of: int, cfg: StrategyConfig,
 def near_price(line: Trendline, candle: Candle, index: int,
                atr_ref: float, cfg: StrategyConfig) -> bool:
     """STEP 4 -- do nothing until price actually reaches the line."""
-    distance = abs(candle.close - line.value_at(index))
+    distance = abs(candle.close - line.at(index, candle.ts))
     return distance <= cfg.approach_atr * atr_ref

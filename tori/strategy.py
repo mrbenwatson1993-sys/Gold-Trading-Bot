@@ -167,6 +167,14 @@ class ToriStrategy:
         self.alignment = alignment
         self._lines: list[Trendline] = []
         self._confirmed_count = 0
+        # Top-down lines, when configured: drawn on the higher timeframes and
+        # projected onto this chart, rather than fitted to this chart's swings.
+        self._book = None
+        if cfg.line_timeframes:
+            from .project import build_projected_book
+            self._book = build_projected_book(candles, cfg,
+                                              tuple(cfg.line_timeframes))
+        self._book_key: tuple = ()
         self._levels: list[Level] = []
         self._levels_at = -1
 
@@ -177,6 +185,24 @@ class ToriStrategy:
         A trader redraws when a new swing completes, not on every candle, and
         doing the same here is both faithful and several times cheaper.
         """
+        if self._book is not None:
+            # The higher-timeframe lines change only when a higher-timeframe
+            # bar closes, so refresh only when the projected set actually
+            # differs -- and keep any line already being watched so a break is
+            # not missed on the bar the set rolls over.
+            incoming = self._book.lines_at(i)
+            key = tuple(ln.key() for ln in incoming)
+            if key != self._book_key:
+                self._book_key = key
+                # The book is the set of lines currently drawn on the higher
+                # timeframe, so it replaces rather than adds to what is being
+                # watched. Carrying old lines forward would accumulate every
+                # line ever drawn, and a line that has left the book left it
+                # because the higher timeframe closed through it -- a break
+                # this chart, being finer, has already seen.
+                self._lines = list(incoming)
+            return
+
         confirmed = sum(1 for s in self.swings if s.confirmed_at <= i)
         if confirmed != self._confirmed_count or not self._lines:
             self._confirmed_count = confirmed
@@ -451,7 +477,7 @@ class ToriStrategy:
                 return None
 
         c = self.candles[i]
-        level = line.value_at(i)
+        level = line.at(i, c.ts)
         displacement = abs(c.close - level)
 
         brk = Break(
@@ -558,7 +584,7 @@ class ToriStrategy:
             # No new structure yet, so the Action Line is still the reference.
             # It stays extended after the break, and price closing back through
             # it means the break failed and the old trend never actually ended.
-            action = pos.action_line.value_at(i)
+            action = pos.action_line.at(i, c.ts)
             if pos.is_long and c.close < action - buffer:
                 return c.close, "failed break"
             if not pos.is_long and c.close > action + buffer:
@@ -586,7 +612,7 @@ class ToriStrategy:
         the only way to price how close the stop can afford to sit.
         """
         line = pos.safety_line or pos.action_line
-        level = line.value_at(i)
+        level = line.at(i, candle.ts)
         return (candle.close > level) if pos.is_long else (candle.close < level)
 
     def _advance_stop(self, pos: Position, i: int) -> None:
