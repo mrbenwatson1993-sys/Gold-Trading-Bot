@@ -100,7 +100,7 @@ class Position:
         the same break, read from the other side.
         """
         if reason in ("safety line", "stop", "stop (wicked)",
-                      "stop (confirmed)", "hard stop"
+                      "stop (confirmed)", "stop (floor)", "hard stop"
                       ) and self.safety_line is not None:
             return self.safety_line
         return self.action_line
@@ -492,6 +492,19 @@ class ToriStrategy:
             locked_in = ((pos.hard_stop >= pos.entry_price) if pos.is_long
                          else (pos.hard_stop <= pos.entry_price))
             if locked_in and self.cfg.stop_close_confirm_in_profit:
+                # The original 1R order never leaves the market. Waiting for a
+                # close is what stops a wick ending a winner, but on its own it
+                # has no floor: a bar can open above the trailing stop and
+                # settle far below entry, and the exit then happens at whatever
+                # that close was. Measured on 1H gold that produced a single
+                # -14.41R trade. Keeping the initial stop resting underneath
+                # bounds the damage at the risk the trade was sized for.
+                floor_hit = ((c.low <= pos.initial_stop) if pos.is_long
+                             else (c.high >= pos.initial_stop))
+                if floor_hit:
+                    fill = (min(pos.initial_stop, c.open) if pos.is_long
+                            else max(pos.initial_stop, c.open))
+                    return fill, "stop (floor)"
                 hit = ((c.close <= pos.hard_stop) if pos.is_long
                        else (c.close >= pos.hard_stop))
                 if hit:

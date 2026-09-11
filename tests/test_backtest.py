@@ -71,6 +71,20 @@ class TestOnRealData(unittest.TestCase):
             self.assertGreater(t.r_multiple, -3.0,
                                f"loss of {t.r_multiple:.2f}R on {t.entry_ts}")
 
+    def test_hybrid_stop_keeps_the_risk_cap(self):
+        """Close-confirming the trailing stop must not remove the floor.
+
+        The original stop stays resting underneath, so waiting for a close can
+        cost open profit but never more than the trade was sized to risk.
+        """
+        from dataclasses import replace
+        cfg = replace(self.cfg, stop_on_close_only=False,
+                      stop_close_confirm_in_profit=True)
+        result = run(self.candles, cfg, self.risk)
+        self.assertTrue(result.trades)
+        worst = min(t.r_multiple for t in result.trades)
+        self.assertGreater(worst, -3.0, f"hybrid stop lost {worst:.2f}R")
+
     def test_close_only_stops_do_not_bound_the_loss(self):
         """The cost of "stay in unless price BREAKS the line".
 

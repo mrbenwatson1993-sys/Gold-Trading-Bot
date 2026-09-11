@@ -358,6 +358,44 @@ on 4H the filter improves *every* touch bucket and *both* regimes, which a pure
 fluke would not do. That is a hypothesis worth testing properly on real GC
 futures over a decade — not a result.
 
+## Which timeframe? Any of them -- but scale the settings by TIME, not bars
+
+The settings are counted in bars, so the obvious assumption is that structure
+is fractal and 60 bars means the same thing on any chart. It does not.
+`analysis/timeframes.py`:
+
+| chart | scaling | age | swing | safety | trades | hold | expectancy | PF | **worst** | return | max DD |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| 4H | reference | 60 | 3 | 12 | 415 | **9.1 days** | +0.293R | 1.39 | −1.09R | +134.6% | 21.7% |
+| 1H | same **bars** | 60 | 3 | 12 | 1860 | 1.9 days | +0.064R | 1.05 | **−14.41R** | +66.6% | 45.6% |
+| 1H | same **time** (x4) | 240 | 12 | 48 | 329 | **8.4 days** | **+0.275R** | **1.43** | −1.81R | +105.5% | **14.0%** |
+
+Multiply every bar-count by four on the 1H chart and it reproduces the 4H
+result closely -- 8.4 days against 9.1, +0.275R against +0.293R, PF 1.43
+against 1.39 -- at *lower* drawdown. Keep the bar-counts and it falls apart:
+a fifth of the expectancy, double the drawdown, and holds collapse to under
+two days because 60 bars of 1H is only two and a half days of structure.
+
+So the method does travel across timeframes, which is the claim -- but what
+has to stay constant is the amount of price action behind the line, not the
+number of candles. Dropping from 4H to 1H means x4 on the age, the swing
+strength and the touch spacing; to 15m, x16.
+
+### A correction, found by the 1H test
+
+The hybrid stop was described here as bounded: "the worst case is giving back
+open profit, never more than the initial risk". **That was wrong.** Once the
+trailing stop moved above entry the resting order was removed and only a close
+could trigger it, so a bar that opened above the stop and settled far below
+exited at that close, with no floor under it. On 4H no such bar occurred and
+the worst trade was -1.09R, which made a missing guarantee look like a real
+one. On 1H it produced a single **-14.41R** trade.
+
+Fixed: the original 1R order now stays resting underneath the trailing stop.
+Waiting for a close still prevents a wick from ending a winner, and the floor
+bounds the damage at the risk the trade was sized for. There is a test
+asserting it.
+
 ## One line, one stop -- and how close the stop can sit
 
 The model, as the method actually works:

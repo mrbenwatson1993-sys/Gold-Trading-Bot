@@ -75,7 +75,7 @@ class TestStrategy(unittest.TestCase):
                 break
         self.assertIsNotNone(outcome, "the trade should have closed")
         self.assertIn(outcome[1], ("stop", "stop (wicked)",
-                                   "stop (confirmed)", "safety line",
+                                   "stop (confirmed)", "stop (floor)", "safety line",
                                    "hard stop", "failed break"))
 
     def test_no_profit_target_exists_anywhere(self):
@@ -85,7 +85,7 @@ class TestStrategy(unittest.TestCase):
                      RiskConfig(symbol="MGC", starting_equity=250_000))
         reasons = {t.exit_reason for t in result.trades}
         self.assertTrue(reasons <= {"stop", "stop (wicked)",
-                                    "stop (confirmed)", "safety line",
+                                    "stop (confirmed)", "stop (floor)", "safety line",
                                     "hard stop", "stop (close)",
                                     "failed break", "open at end"}, reasons)
 
