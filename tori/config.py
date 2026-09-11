@@ -76,6 +76,14 @@ class StrategyConfig:
     # winner can breathe. "recent" re-anchors to the last two swings instead,
     # which produces a much steeper line that cuts trends short.
     safety_anchor: str = "origin"
+    # The Safety Line gets its own, coarser swing setting. Detecting trendline
+    # touches wants sensitivity; deciding "has the trend actually broken" wants
+    # the opposite. At the detection strength every three-bar dip counts as a
+    # higher low, so the line ratchets up right under price and ends the trade
+    # long before structure has broken -- which caps every winner near 1R and
+    # removes exactly the long runs the method exists to capture.
+    # 0 means "use swing_strength".
+    safety_swing_strength: int = 0
     # The stop is dynamic: it rides the Safety Line, moving up every bar for a
     # long (down for a short) because the line itself slopes. It never moves
     # against the trade. Set False to step it only at confirmed swing pivots,

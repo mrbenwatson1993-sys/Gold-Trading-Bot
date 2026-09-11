@@ -153,6 +153,11 @@ class ToriStrategy:
         self.atr = atr
         self.cfg = cfg
         self.swings = find_swings(candles, cfg.swing_strength)
+        # Structure for the Safety Line is read at its own, usually coarser,
+        # strength so the line follows real pullbacks rather than noise.
+        strength = cfg.safety_swing_strength or cfg.swing_strength
+        self.safety_swings = (self.swings if strength == cfg.swing_strength
+                              else find_swings(candles, strength))
         self.alignment = alignment
         self._lines: list[Trendline] = []
         self._confirmed_count = 0
@@ -329,7 +334,7 @@ class ToriStrategy:
         origin = pos.safety_origin
         if origin is None:
             return
-        pool = [s for s in visible_swings(self.swings, i, pivot)
+        pool = [s for s in visible_swings(self.safety_swings, i, pivot)
                 if s.index > origin.index]
         if not pool:
             return
@@ -362,7 +367,7 @@ class ToriStrategy:
         # adopts the broken Safety Line as its Action Line -- that silently
         # labels almost every trade a 2-touch setup.
         tol = cfg.touch_tolerance_atr * self.atr[i]
-        line.touches = [s for s in visible_swings(self.swings, i, pivot)
+        line.touches = [s for s in visible_swings(self.safety_swings, i, pivot)
                         if s.index >= a.index
                         and abs(s.price - line.value_at(s.index)) <= tol]
         if a not in line.touches:

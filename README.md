@@ -358,6 +358,66 @@ on 4H the filter improves *every* touch bucket and *both* regimes, which a pure
 fluke would not do. That is a hypothesis worth testing properly on real GC
 futures over a decade — not a result.
 
+## Does it work on other markets? Metals yes, everything else no.
+
+A claim about trendlines should not care what the symbol is. Same engine,
+same settings, 10-16 years of 4H data each, 1% risk, no HTF filter, always in,
+stop trailing the Safety Line. `analysis/instruments.py`.
+
+| market | 2 tch | 3 tch | 4 tch | 5 tch | buy & hold |
+|---|---|---|---|---|---|
+| **GOLD** GC | +15.3% | +47.3% | +32.9% | **+73.7%** | +198.5% |
+| **SILVER** SI | +75.9% | **+156.5%** | +35.7% | +102.3% | −25.3% |
+| S&P ES | −48.2% | −16.0% | −38.8% | −14.7% | +171.1% |
+| NASDAQ NQ | −69.5% | −72.4% | −65.0% | −53.8% | +405.3% |
+| BRENT CL | −68.6% | −35.7% | −44.2% | −50.4% | −11.0% |
+
+Profit factor tells the same story: gold 1.03-1.27 and silver 1.14-1.41, all
+positive; against 0.72-0.94 on the S&P, **0.50-0.71** on the NASDAQ and
+0.64-0.87 on Brent. Every one of the twenty non-metal configurations loses
+money.
+
+The silver result is the strongest single finding in the project: **+156.5% at
+PF 1.26 over a decade in which silver itself fell 25%.** Making money while the
+underlying declines is what a two-sided trend system is supposed to do, and it
+is not something curve-fitting to gold would produce for free.
+
+But three markets out of five lose badly, and the NASDAQ numbers are a
+wipeout. So this is not a general property of trendlines. It works on precious
+metals and fails on equity indices and crude, and **there is no tested reason
+why.** A plausible story -- indices have a strong upward drift that punishes
+the short side of an always-in system -- is contradicted by gold, which rose
+just as hard and still paid. Until that is explained rather than narrated,
+"works on metals" is an observation, not a rule.
+
+One measurement trap visible in the table: the S&P 3-touch row shows +0.137R
+expectancy alongside a **−16.0% return**, because a single +174R outlier drags
+the R average up while the dollars stay negative. Read the return column.
+
+### Does the engine actually do what the chart shows?
+
+`analysis/trace.py` prints real trades in the chart's own terms. The sequence
+matches exactly -- three touches listed with dates and prices, the Action Line
+break with the close and the line value, entry on the next bar, the Safety
+Line drawn from the breakout low up to each new higher low, and the exit when
+price comes back through it.
+
+What did not match at first was how long trades ran. With the Safety Line read
+at the same sensitivity used to detect trendline touches, every three-bar dip
+counted as a higher low, so the line ratcheted up under price and capped
+winners near 1R. Reading it at coarser structure (`safety_swing_strength`)
+is what lets price decide the profit:
+
+| safety strength | trades | hold | avg win | best | >=10R | return | max DD |
+|---|---|---|---|---|---|---|---|
+| 3 (same as detection) | 1229 | 8.9 bars | +1.27R | +14.4R | 0.4% | +77.5% | 31.6% |
+| 12 | 1152 | **20.3 bars** | **+2.04R** | +39.2R | **1.0%** | **+106.8%** | **23.3%** |
+| 24 | 852 | 28.2 bars | +2.83R | +47.0R | 1.3% | +73.6% | 28.2% |
+
+Longer holds, larger average wins, more genuine runners *and* lower drawdown.
+Note strength 8 is an outlier at −62.8% and PF 0.83, so the relationship is
+not monotonic and the setting should not be trusted precisely.
+
 ## Touch count, tested the way the method actually describes it
 
 No higher-timeframe filter -- the monthly and weekly are used to place the
