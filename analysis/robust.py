@@ -51,7 +51,7 @@ for label, kw in GRID:
                       stop_follows_safety=True, safety_line_redraw=False,
                       stop_on_close_only=False, stop_close_confirm_in_profit=True,
                       swing_strength=3, safety_swing_strength=12,
-                      max_touches=99, auto_gap_stop_pct=99.0, **kw)
+                      max_touches=99, **kw)
         s = run(cs, cfg, RiskConfig(symbol=sym, starting_equity=250_000,
                                     risk_pct=1.0)).stats
         row[name] = (s.get("profit_factor", 0.0), s.get("return_pct", 0.0),

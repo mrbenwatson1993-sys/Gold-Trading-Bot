@@ -232,10 +232,25 @@ def recommended() -> StrategyConfig:
     Lines are drawn on the daily, weekly and monthly and projected onto the
     traded chart -- not fitted to its own swings, which is what every early
     version did and what kept the results confined to gold. Three touches. The
-    stop trails 0.25 ATR from the line, never closer to price than the
-    instrument's own 99th-percentile gap, and fills intrabar while it is still
+    stop trails 0.25 ATR from the line and fills intrabar while it is still
     below entry so the loss stays capped at what the trade was sized for.
     Always in the market. No profit target.
+
+    Four rules are added to the bare idea of "a line, a close through it, a
+    stop on the other side": three touches, the D/W/M ladder, a coarse swing
+    setting for the stop, and close-confirmation of the stop once it is in
+    profit. Each was leave-one-out tested -- removed from this config with
+    everything else intact -- and each pays for itself on all three markets
+    (analysis/ablation.py). Nothing else is switched on.
+
+    The gap-calibrated minimum stop (auto_gap_stop_pct) used to be here and is
+    not any more: leave-one-out it was worth -0.016R on gold, +0.017R on the
+    S&P and -0.013R on GBPUSD, which is noise, and it failed the tail test it
+    existed for. Worst trade and count of losses beyond 1R were identical with
+    and without on gold and GBPUSD; on the S&P the only trade in the whole
+    sample to lose more than 1R (-1.78R) occurred WITH the rule and disappeared
+    without it. The intrabar stop already caps the loss at what the trade was
+    sized for, so there was nothing left for it to protect.
 
     Applied unchanged to nine markets it is profitable on seven, and the three
     it suits best -- gold, the S&P and GBPUSD -- hold up in every era tested
@@ -257,7 +272,6 @@ def recommended() -> StrategyConfig:
         stop_on_close_only=False,
         stop_close_confirm_in_profit=True,
         trail_buffer_atr=0.25,
-        auto_gap_stop_pct=99.0,
     )
 
 

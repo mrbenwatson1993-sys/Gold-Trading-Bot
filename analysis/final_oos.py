@@ -31,8 +31,7 @@ def config(cs):
                    stop_on_close_only=False, stop_close_confirm_in_profit=True,
                    swing_strength=3, safety_swing_strength=12,
                    line_timeframes=("1d", "1w", "1M"), min_touches=3,
-                   max_touches=99, trail_buffer_atr=0.25,
-                   auto_gap_stop_pct=99.0)
+                   max_touches=99, trail_buffer_atr=0.25)
 
 
 print(f"  {'market':<7} {'era':<11} {'n':>5} {'win%':>6} {'expR':>8} {'PF':>6} "

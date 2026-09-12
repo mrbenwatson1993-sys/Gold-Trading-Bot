@@ -34,8 +34,7 @@ for name, path, sym in MARKETS:
                    stop_follows_safety=True, safety_line_redraw=False,
                    stop_on_close_only=False, stop_close_confirm_in_profit=True,
                    trail_buffer_atr=0.50, swing_strength=3,
-                   safety_swing_strength=12, min_touches=3, max_touches=99,
-                   auto_gap_stop_pct=99.0)
+                   safety_swing_strength=12, min_touches=3, max_touches=99)
     risk = RiskConfig(symbol=sym, starting_equity=250_000, risk_pct=1.0)
     for label, tfs in VARIANTS:
         r = run(cs, replace(base, line_timeframes=tfs), risk)

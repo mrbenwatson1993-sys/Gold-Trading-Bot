@@ -34,7 +34,7 @@ MARKETS = [("GOLD", "data/gold_4h_16y.csv", "MGC"),
 VARIANTS = [
     ("base",      dict(), {}),
     ("gap",       dict(auto_gap_stop_pct=99.0), {}),
-    ("gap+htf",   dict(auto_gap_stop_pct=99.0, htf_align="soft",
+    ("gap+htf",   dict(htf_align="soft",
                        htf_timeframes=("1d", "1w")), {}),
     ("gap+longs", dict(auto_gap_stop_pct=99.0), dict(allow_shorts=False)),
 ]

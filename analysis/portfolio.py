@@ -37,7 +37,7 @@ def trades_for(path, sym):
                   stop_on_close_only=False, stop_close_confirm_in_profit=True,
                   swing_strength=3, safety_swing_strength=12,
                   line_timeframes=("1d", "1w", "1M"), min_touches=3,
-                  max_touches=99, trail_buffer_atr=0.25, auto_gap_stop_pct=99.0)
+                  max_touches=99, trail_buffer_atr=0.25)
     r = run(cs, cfg, RiskConfig(symbol=sym, starting_equity=EQUITY,
                                 risk_pct=1.0, compound=False))
     return [(t.exit_ts, t.r_multiple) for t in r.trades]

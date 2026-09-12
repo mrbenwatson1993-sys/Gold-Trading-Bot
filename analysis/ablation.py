@@ -31,8 +31,8 @@ LADDER = [
     ("2. + coarse swings for the stop (12 not 3)", dict(safety_swing_strength=12)),
     ("3. + lines drawn on D/W/M, projected down", dict(line_timeframes=("1d", "1w", "1M"))),
     ("4. + 3 touches instead of 2", dict(min_touches=3)),
-    ("5. + gap-calibrated minimum stop  [= recommended]", dict(auto_gap_stop_pct=99.0)),
-    ("6. + close-confirm the stop once in profit", dict(stop_close_confirm_in_profit=True)),
+    ("5. + gap-calibrated minimum stop (since removed)", dict(auto_gap_stop_pct=99.0)),
+    ("6. + close-confirm stop in profit [= recommended]", dict(stop_close_confirm_in_profit=True)),
 ]
 
 DATA = {}
